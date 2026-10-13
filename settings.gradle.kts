@@ -1,25 +1,26 @@
+// Dépôts : androidx et com.android ne peuvent venir que du dépôt Google (contenu exclusif) ;
+// les autres groupes Google (KSP, Guava…) sont aussi publiés sur Maven Central.
 pluginManagement {
     repositories {
-        google {
-            content {
-                includeGroupByRegex("androidx.*")
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
+        exclusiveContent {
+            forRepository { google() }
+            filter {
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.android(\\..*)?")
             }
         }
         mavenCentral()
-        gradlePluginPortal()
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google {
-            content {
-                includeGroupByRegex("androidx.*")
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
+        exclusiveContent {
+            forRepository { google() }
+            filter {
+                includeGroupByRegex("androidx\\..*")
+                includeGroupByRegex("com\\.android(\\..*)?")
             }
         }
         mavenCentral()

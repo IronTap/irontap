@@ -33,6 +33,9 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 - Pas de permission `INTERNET` : garantit qu'aucun appel réseau n'est possible.
 - Seule permission demandée : `POST_NOTIFICATIONS` (Android 13+, précédée de l'écran 9).
 - R8 (`isMinifyEnabled`) activé en release.
+- Sauvegarde : aucune sauvegarde dans le cloud (`allowBackup="false"` et `dataExtractionRules`). Le transfert direct vers un nouveau téléphone (Android 12+) reste permis pour garder l'historique.
+- Version de développement : paquet distinct `app.irontap.debug` (« IronTap debug »), qui coexiste avec la version signée sans partager ses données.
+- Dépôts Gradle : `androidx.*` et `com.android.*` viennent exclusivement du dépôt Google, le reste de Maven Central.
 - Aucune bibliothèque de publicité, d'analytique ou de traçage.
 
 ## Chronomètre et notification
@@ -74,6 +77,7 @@ Spec §6, avec ces précisions :
 - Rédiger une politique de confidentialité courte et remplir la section « sécurité des données » (aucune donnée collectée).
 - Compte développeur personnel récent : test fermé obligatoire avec 12 testeurs pendant 14 jours avant la mise en production.
 - Vérifier le `targetSdk` exigé par Google au moment de la publication.
+- Activer la vérification des dépendances (`./gradlew --write-verification-metadata sha256 …`, fichier `gradle/verification-metadata.xml` versionné).
 - Embarquer les mentions de licence tierces dans l'application (Inter OFL, Phosphor MIT : `licences/*.txt`), par exemple sur une ligne « Licences ».
 
 ## Prochaines étapes

@@ -51,16 +51,8 @@ class EntrainementDaoTest {
 
     private suspend fun exercices(id: Long) = dao.observerExercices(id).first()
 
-    /** `assertThrows` pour du code suspendu (le bloc est copié dans la coroutine du test). */
-    private inline fun <reified T : Throwable> echoue(bloc: () -> Unit) {
-        try {
-            bloc()
-        } catch (e: Throwable) {
-            if (e is T) return
-            throw e
-        }
-        throw AssertionError("${T::class.simpleName} attendue")
-    }
+    private suspend fun creer(date: LocalDate = lundi, libelle: String? = null) =
+        checkNotNull(dao.creerEntrainement(date, libelle, t0))
 
     /** Exercices sous la forme « ordre.nom: ordre/poids×reps, … » pour comparer d'un coup d'œil. */
     private suspend fun resume(id: Long) = exercices(id).map { (exercice, series) ->
@@ -69,7 +61,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `creer un entraînement le met en cours avec un chrono arrete`() = runTest {
-        val id = dao.creerEntrainement(lundi, "  Dos / biceps ", t0)
+        val id = creer(lundi, "  Dos / biceps ")
 
         val enCours = dao.observerEnCours().first()
         assertEquals(Entrainement(id, lundi, "Dos / biceps", t0), enCours)
@@ -79,7 +71,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `un libelle vide est enregistre comme absent`() = runTest {
-        val id = dao.creerEntrainement(lundi, "   ", t0)
+        val id = creer(lundi, "   ")
         assertNull(dao.lireEnCours()!!.libelle)
 
         dao.modifierEntrainement(id, lundi.minusDays(1), " Jambes ")
@@ -90,13 +82,14 @@ class EntrainementDaoTest {
 
     @Test
     fun `un seul entraînement en cours a la fois`() = runTest {
-        dao.creerEntrainement(lundi, null, t0)
-        echoue<IllegalStateException> { dao.creerEntrainement(lundi, null, t0) }
+        val id = creer()
+        assertNull(dao.creerEntrainement(lundi, "Autre", t0))
+        assertEquals(id, dao.lireEnCours()!!.id)
     }
 
     @Test
     fun `nouvelle serie reste sur l'exercice, nouvel exercice en ouvre un autre`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
 
         val s1 = serie(id, nom = "  Tirage vertical ", poids = 40.0, reps = 15)
         assertEquals(1, s1?.ordre)
@@ -116,7 +109,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `un nouvel exercice sans nom n'enregistre rien`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         assertNull(serie(id, nom = "  "))
         assertTrue(exercices(id).isEmpty())
         assertEquals(EtatChrono(id), dao.lireChrono(id))
@@ -124,7 +117,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `enregistrer une serie relance le chrono, meme en pause`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         dao.modifierChrono(id) { it.demarre(1_000).enPause(9_000) }
         assertEquals(EtatChrono(id, Etat.Pause, null, 8_000), dao.lireChrono(id))
 
@@ -135,10 +128,10 @@ class EntrainementDaoTest {
 
     @Test
     fun `terminer un entraînement le range dans l'historique et supprime son chrono`() = runTest {
-        val ancien = dao.creerEntrainement(lundi.minusDays(7), null, t0)
+        val ancien = creer(lundi.minusDays(7))
         serie(ancien, nom = "Squat")
         dao.terminer(ancien, t0)
-        val id = dao.creerEntrainement(lundi, "Dos", t0)
+        val id = creer(lundi, "Dos")
         serie(id, nom = "Tirage", suite = Suite.NouvelExercice)
         val fin = t0.plusSeconds(3600)
 
@@ -154,7 +147,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `terminer un entraînement sans serie le supprime`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         dao.terminer(id, t0)
         assertNull(dao.observer(id).first())
         assertNull(dao.lireChrono(id))
@@ -162,7 +155,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `supprimer une serie renumerote les suivantes`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         serie(id, nom = "Tirage", reps = 15)
         val s2 = serie(id, reps = 12)
         serie(id, reps = 10)
@@ -174,7 +167,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `supprimer la derniere serie d'un exercice supprime l'exercice et renumerote les suivants`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         serie(id, nom = "Tirage", suite = Suite.NouvelExercice)
         val seule = serie(id, nom = "Curl", suite = Suite.NouvelExercice)
         serie(id, nom = "Dips")
@@ -192,7 +185,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `edition de l'historique`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         val s1 = serie(id, nom = "Tirage", poids = 40.0, reps = 15)
         dao.terminer(id, t0)
         val exercice = exercices(id).single().exercice
@@ -209,7 +202,7 @@ class EntrainementDaoTest {
 
     @Test
     fun `supprimer un entraînement supprime ses exercices et series`() = runTest {
-        val id = dao.creerEntrainement(lundi, null, t0)
+        val id = creer()
         serie(id, nom = "Squat")
         dao.supprimerEntrainement(id)
 
@@ -220,12 +213,12 @@ class EntrainementDaoTest {
 
     @Test
     fun `noms d'exercices du plus recemment utilise au plus ancien, sans doublon`() = runTest {
-        val ancien = dao.creerEntrainement(lundi.minusDays(7), null, t0)
+        val ancien = creer(lundi.minusDays(7))
         serie(ancien, nom = "Squat", suite = Suite.NouvelExercice)
         serie(ancien, nom = "Tirage", suite = Suite.NouvelExercice)
         serie(ancien, nom = "Curl")
         dao.terminer(ancien, t0)
-        val recent = dao.creerEntrainement(lundi, null, t0)
+        val recent = creer()
         serie(recent, nom = "Squat")
 
         assertEquals(listOf("Squat", "Curl", "Tirage"), dao.observerNomsExercices().first())
@@ -233,17 +226,62 @@ class EntrainementDaoTest {
 
     @Test
     fun `lecture complete triee pour le detail et l'export`() = runTest {
-        val id = dao.creerEntrainement(lundi, "Dos", t0)
+        val id = creer(lundi, "Dos")
         serie(id, nom = "Tirage", reps = 15)
         serie(id, reps = 12, suite = Suite.NouvelExercice)
         serie(id, nom = "Curl", reps = 12)
         dao.terminer(id, t0)
-        val enCours = dao.creerEntrainement(lundi, null, t0)
+        val enCours = creer()
         serie(enCours, nom = "Squat")
 
         val complet = dao.lireComplet(id)!!
         assertEquals(listOf("Tirage", "Curl"), complet.exercices.map { it.exercice.nom })
         assertEquals(listOf(15, 12), complet.exercices.first().series.map { it.repetitions })
         assertEquals(listOf(id), dao.lireHistoriqueComplet().map { it.entrainement.id })
+    }
+
+    @Test
+    fun `apres nouvel exercice, un nom vide n'enregistre rien et laisse le chrono intact`() = runTest {
+        val id = creer()
+        serie(id, nom = "Squat", suite = Suite.NouvelExercice, realtime = 5_000)
+        val chrono = dao.lireChrono(id)
+
+        assertNull(serie(id, nom = " ", realtime = 9_000))
+
+        assertEquals(listOf("1.Squat: 1/40.0×10"), resume(id))
+        assertEquals(chrono, dao.lireChrono(id))
+        assertTrue(dao.lireEnCours()!!.nouvelExercice)
+    }
+
+    @Test
+    fun `aucune serie n'est enregistree sur un entrainement termine ou supprime`() = runTest {
+        val id = creer()
+        serie(id, nom = "Squat")
+        dao.terminer(id, t0)
+        assertNull(serie(id, nom = "Squat"))
+        assertEquals(listOf("1.Squat: 1/40.0×10"), resume(id))
+        assertNull(dao.lireChrono(id))
+
+        val vide = creer()
+        dao.terminer(vide, t0)
+        assertNull(serie(vide, nom = "Squat"))
+    }
+
+    @Test
+    fun `l'entrainement en cours complet et son chrono`() = runTest {
+        assertNull(dao.observerEnCoursComplet().first())
+        val id = creer(libelle = "Dos")
+        serie(id, nom = "Tirage", reps = 15)
+        serie(id, reps = 12, suite = Suite.NouvelExercice, realtime = 3_000)
+        serie(id, nom = "Curl", reps = 12, realtime = 4_000)
+
+        val enCours = dao.observerEnCoursComplet().first()!!
+        assertEquals(id, enCours.entrainement.id)
+        assertEquals(listOf("Tirage", "Curl"), enCours.exercices.map { it.exercice.nom })
+        assertEquals(listOf(listOf(15, 12), listOf(12)), enCours.exercices.map { e -> e.series.map { it.repetitions } })
+        assertEquals(EtatChrono(id, Etat.EnCours, demarreA = 4_000), enCours.chrono)
+
+        dao.terminer(id, t0)
+        assertNull(dao.observerEnCoursComplet().first())
     }
 }

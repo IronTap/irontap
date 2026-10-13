@@ -133,7 +133,7 @@ class SaisieCaptureTest {
 
     @Test
     fun dialogueAvecSerie() {
-        afficher(exercices = listOf(tirage), formulaire = Formulaire(dialogue = DialogueFin.AvecSerie("45 kg × 10")))
+        afficher(exercices = listOf(tirage), formulaire = Formulaire(dialogue = DialogueFin.AvecSerie(SerieSaisie("Tirage vertical", 45.0, 10))))
         compose.waitForIdle()
         captureScreenRoboImage()
     }

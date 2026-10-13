@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Distingue la version de développement, installée à côté de la version signée. -->
+    <string name="app_name">IronTap debug</string>
+</resources>

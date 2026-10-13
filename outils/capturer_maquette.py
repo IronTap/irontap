@@ -27,7 +27,7 @@ largeur, hauteur = int(sys.argv[4]), int(sys.argv[5])
 serveur = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Silencieux, directory=racine))
 threading.Thread(target=serveur.serve_forever, daemon=True).start()
 with sync_playwright() as p:
-    navigateur = p.chromium.launch()
+    navigateur = p.chromium.launch(chromium_sandbox=True)
     page = navigateur.new_page(viewport={"width": largeur, "height": hauteur}, device_scale_factor=3)
     page.on("console", lambda m: print("console:", m.text) if m.type == "error" else None)
     page.goto(f"http://127.0.0.1:{serveur.server_port}/{page_html}", wait_until="networkidle")

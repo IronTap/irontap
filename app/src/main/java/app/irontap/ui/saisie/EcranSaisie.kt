@@ -67,7 +67,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.irontap.R
 import app.irontap.donnees.EntrainementDao.Suite
@@ -233,6 +236,7 @@ fun ContenuSaisie(
 
         Toast(
             message = formulaire.toast,
+            erreur = formulaire.toastErreur,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .safeDrawingPadding()
@@ -242,7 +246,7 @@ fun ContenuSaisie(
 
     when (val dialogue = formulaire.dialogue) {
         null -> Unit
-        is DialogueFin.AvecSerie -> DialogueFinAvecSerie(dialogue.description, actions)
+        is DialogueFin.AvecSerie -> DialogueFinAvecSerie(dialogue.serie.description, actions)
         DialogueFin.Simple -> DialogueFinSimple(actions)
     }
 }
@@ -274,15 +278,21 @@ private fun EnTete(etat: EtatSaisie.EnCours) {
 
 // --- Chrono ---
 
-/** Temps écoulé du chrono, rafraîchi à chaque changement de seconde tant qu'il tourne. */
+/**
+ * Temps écoulé du chrono, rafraîchi à chaque changement de seconde tant qu'il tourne et que l'écran
+ * est visible. Au retour au premier plan (téléphone rallumé…), la valeur est recalculée aussitôt.
+ */
 @Composable
 private fun ecouleMs(chrono: EtatChrono?, realtime: () -> Long): Long {
     var maintenant by remember { mutableLongStateOf(realtime()) }
-    LaunchedEffect(chrono) {
-        maintenant = realtime()
-        while (chrono?.etat == EtatChrono.Etat.EnCours) {
-            delay(1_000 - chrono.ecouleMs(maintenant) % 1_000)
+    val cycleDeVie = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(chrono, cycleDeVie) {
+        cycleDeVie.repeatOnLifecycle(Lifecycle.State.STARTED) {
             maintenant = realtime()
+            while (chrono?.etat == EtatChrono.Etat.EnCours) {
+                delay(1_000 - chrono.ecouleMs(maintenant) % 1_000)
+                maintenant = realtime()
+            }
         }
     }
     return chrono?.ecouleMs(maintenant) ?: 0
@@ -496,7 +506,7 @@ private fun Actions(actions: ActionsSaisie) {
 
 /** Toast : neutre-800, rayon 8, élévation md, ✓ accent-300 et texte 14 neutre-100. */
 @Composable
-private fun Toast(message: String?, modifier: Modifier) {
+private fun Toast(message: String?, erreur: Boolean, modifier: Modifier) {
     // Garde le dernier message pendant le fondu de sortie.
     var dernier by remember { mutableStateOf("") }
     if (message != null) dernier = message
@@ -510,7 +520,11 @@ private fun Toast(message: String?, modifier: Modifier) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icone(R.drawable.ic_check, taille = 18.dp, couleur = Couleurs.Accent300)
+            if (erreur) {
+                Icone(R.drawable.ic_warning_circle, taille = 18.dp, couleur = Couleurs.ErreurTexte)
+            } else {
+                Icone(R.drawable.ic_check, taille = 18.dp, couleur = Couleurs.Accent300)
+            }
             Text(dernier, style = Typo.Secondaire, color = Couleurs.Neutre100)
         }
     }

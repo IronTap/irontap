@@ -1,15 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Aucune permission INTERNET : l'application ne peut faire aucun appel réseau. -->
 
+    <!--
+        Sauvegarde : allowBackup="false" coupe tout jusqu'à Android 11 (fullBackupContent est donc inutile) ;
+        à partir d'Android 12, les règles d'extraction excluent le cloud et permettent le transfert direct.
+    -->
     <application
         android:name=".IronTapApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/regles_extraction_donnees"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.IronTap">
+        android:theme="@style/Theme.IronTap"
+        tools:ignore="DataExtractionRules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

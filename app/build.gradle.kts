@@ -20,6 +20,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Paquet distinct : la version de développement coexiste avec la version signée, sans partager ses données.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

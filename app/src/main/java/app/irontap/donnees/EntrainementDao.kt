@@ -26,6 +26,12 @@ abstract class EntrainementDao {
     @Query("SELECT * FROM entrainement WHERE termine_le IS NULL LIMIT 1")
     abstract fun observerEnCours(): Flow<Entrainement?>
 
+    /**
+     * Entraînement en cours avec ses exercices, séries et chrono, lus dans une même transaction : une écriture
+     * ne produit jamais d'état intermédiaire mêlant l'ancien entraînement et les nouvelles séries.
+     */
+    fun observerEnCoursComplet(): Flow<EntrainementEnCours?> = observerEnCoursCompletBrut().map { it?.trie() }
+
     /** Entraînements terminés, du plus récent au plus ancien (accueil). */
     @Query("SELECT * FROM entrainement WHERE termine_le IS NOT NULL ORDER BY date DESC, cree_le DESC")
     abstract fun observerHistorique(): Flow<List<Entrainement>>
@@ -64,10 +70,10 @@ abstract class EntrainementDao {
 
     // --- Entraînements ---
 
-    /** Crée l'entraînement et son chrono arrêté. Refusé s'il en existe déjà un en cours. */
+    /** Crée l'entraînement et son chrono arrêté. Retourne `null` sans rien créer s'il en existe déjà un en cours. */
     @Transaction
-    open suspend fun creerEntrainement(date: LocalDate, libelle: String?, maintenant: Instant): Long {
-        check(lireEnCours() == null) { "Un entraînement est déjà en cours" }
+    open suspend fun creerEntrainement(date: LocalDate, libelle: String?, maintenant: Instant): Long? {
+        if (lireEnCours() != null) return null
         val id = inserer(Entrainement(date = date, libelle = libelle.nettoye(), creeLe = maintenant))
         enregistrer(EtatChrono(entrainementId = id))
         return id
@@ -101,7 +107,8 @@ abstract class EntrainementDao {
      * La série ouvre un nouvel exercice nommé [nomExercice] si c'est la première de l'entraînement
      * ou si la précédente a été suivie de « Nouvel exercice » ; sinon [nomExercice] est ignoré
      * (nom verrouillé). Retourne la série enregistrée, avec son numéro, ou `null` sans rien enregistrer
-     * si un nouvel exercice doit être ouvert et que [nomExercice] est vide.
+     * si un nouvel exercice doit être ouvert et que [nomExercice] est vide, ou si l'entraînement n'est
+     * plus en cours (terminé ou supprimé entre-temps).
      */
     @Transaction
     open suspend fun enregistrerSerie(
@@ -113,7 +120,7 @@ abstract class EntrainementDao {
         maintenant: Instant,
         realtime: Long,
     ): Serie? {
-        val entrainement = checkNotNull(lire(entrainementId)) { "Entraînement $entrainementId introuvable" }
+        val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
         val dernier = lireDernierExercice(entrainementId)
         val exerciceId = if (dernier == null || entrainement.nouvelExercice) {
             val nom = nomExercice.trim().ifEmpty { return null }
@@ -188,6 +195,10 @@ abstract class EntrainementDao {
     @Transaction
     @Query("SELECT * FROM entrainement WHERE id = :id")
     protected abstract suspend fun lireCompletBrut(id: Long): EntrainementComplet?
+
+    @Transaction
+    @Query("SELECT * FROM entrainement WHERE termine_le IS NULL LIMIT 1")
+    protected abstract fun observerEnCoursCompletBrut(): Flow<EntrainementEnCours?>
 
     @Transaction
     @Query("SELECT * FROM entrainement WHERE termine_le IS NOT NULL ORDER BY date DESC, cree_le DESC")

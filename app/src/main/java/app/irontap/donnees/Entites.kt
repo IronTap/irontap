@@ -131,9 +131,20 @@ data class EntrainementComplet(
     val exercices: List<ExerciceAvecSeries>,
 )
 
+/** L'entraînement en cours, ses exercices, leurs séries et son chrono, lus ensemble (écran de saisie). */
+data class EntrainementEnCours(
+    @Embedded val entrainement: Entrainement,
+    @Relation(entity = Exercice::class, parentColumn = "id", entityColumn = "entrainement_id")
+    val exercices: List<ExerciceAvecSeries>,
+    @Relation(parentColumn = "id", entityColumn = "entrainement_id")
+    val chrono: EtatChrono?,
+)
+
 /** Room ne garantit pas l'ordre des relations : on trie après lecture. */
 internal fun ExerciceAvecSeries.trie() = copy(series = series.sortedBy { it.ordre })
 
 internal fun List<ExerciceAvecSeries>.trie() = sortedBy { it.exercice.ordre }.map { it.trie() }
 
 internal fun EntrainementComplet.trie() = copy(exercices = exercices.trie())
+
+internal fun EntrainementEnCours.trie() = copy(exercices = exercices.trie())
