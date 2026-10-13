@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phosphor (MIT), géométrie reprise des maquettes. Généré par outils/generer_icones.py : ne pas modifier à la main. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="16"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M56 104a72 72 0 0 1 144 0c0 35.8 8.2 64.5 14.8 76A8 8 0 0 1 208 192H48a8 8 0 0 1-6.9-12C47.8 168.5 56 139.8 56 104Z M96 192a32 32 0 0 0 64 0" />
+</vector>

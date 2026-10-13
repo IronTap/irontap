@@ -21,7 +21,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 | Injection de dépendances | Aucune bibliothèque : conteneur manuel dans `Application` |
 | Dates | `java.time`, locale `fr` (« Lun. 12 oct. 2026 ») |
 | Police | Inter, fichiers TTF embarqués dans `res/font` (pas de polices téléchargeables, elles passent par le réseau) |
-| Icônes | Phosphor, exportées en vector drawables (19 icônes, aucune dépendance) |
+| Icônes | Phosphor, exportées en vector drawables (19 icônes, aucune dépendance ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
 | Export | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` ; texte et CSV générés à la main |
 | Build | Gradle Kotlin DSL + version catalog |
 | Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, autocomplétion sans accents) + Room en mémoire |
@@ -45,6 +45,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 - Les actions Pause / Reprendre / Relancer passent par un `BroadcastReceiver`. Il met à jour l'état en base, puis réaffiche la notification.
 - Si l'utilisateur balaie la notification, elle revient à la prochaine action sur le chrono ou au prochain enregistrement d'une série.
 - Base de temps : `SystemClock.elapsedRealtime()` + temps cumulé, persistés (`EtatChrono`, spec §6).
+- **Affichage `MM:SS`** au lieu de `HH:MM:SS` (spec §4.3.4) : en chiffres tabulaires, le format long déborde du bandeau, et un repos ne dépasse pas l'heure. Au-delà, les minutes continuent (`75:12`). Le chronomètre système de la notification affiche lui aussi `MM:SS` sous l'heure.
 - **Le redémarrage du téléphone n'est pas géré** : le chrono ne sert qu'à suivre le repos entre deux séries. Le temps calculé est seulement borné à 0, pour ne pas planter si `elapsedRealtime` a été remis à zéro.
 
 ## Environnement de développement
@@ -64,6 +65,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 - Rédiger une politique de confidentialité courte et remplir la section « sécurité des données » (aucune donnée collectée).
 - Compte développeur personnel récent : test fermé obligatoire avec 12 testeurs pendant 14 jours avant la mise en production.
 - Vérifier le `targetSdk` exigé par Google au moment de la publication.
+- Embarquer les mentions de licence tierces dans l'application (Inter OFL, Phosphor MIT : `licences/*.txt`), par exemple sur une ligne « Licences ».
 
 ## Prochaines étapes
 
