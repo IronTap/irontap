@@ -1,8 +1,6 @@
 package app.irontap.ui
 
-import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import app.irontap.R
 import app.irontap.ui.composants.BoutonContour
 import app.irontap.ui.composants.BoutonPrincipal
+import app.irontap.ui.composants.BoutonRond
 import app.irontap.ui.composants.BoutonSecondaire
 import app.irontap.ui.composants.EtiquetteLibelle
 import app.irontap.ui.composants.Icone
@@ -42,7 +41,7 @@ import app.irontap.ui.theme.elevation
  * Sert d'écran d'accueil le temps de construire les vrais écrans, pour vérifier le rendu sur le téléphone.
  */
 @Composable
-fun Nuancier(modifier: Modifier = Modifier) {
+fun Nuancier(onSaisie: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -53,6 +52,7 @@ fun Nuancier(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Entraînements", style = Typo.TitreAccueil)
+        BoutonPrincipal("Saisie série", onClick = onSaisie, Modifier.fillMaxWidth(), icone = R.drawable.ic_play)
         SurTitre("Historique · 24")
         CarteHistorique()
         BandeauChrono()
@@ -152,21 +152,13 @@ private fun BandeauChrono() {
             }
             Text("01:12", style = Typo.Chrono, color = Couleurs.Accent100)
         }
-        BoutonRond(R.drawable.ic_pause, Couleurs.Accent900, Couleurs.Accent, Couleurs.Accent300)
-        BoutonRond(R.drawable.ic_arrow_counter_clockwise, Couleurs.Fond, Couleurs.Separateur, Couleurs.Texte)
+        BoutonRond({}, 56.dp, Couleurs.Accent900, Couleurs.Accent800, Couleurs.Accent) {
+            Icone(R.drawable.ic_pause, couleur = Couleurs.Accent300)
+        }
+        BoutonRond({}, 56.dp, Couleurs.Fond, Couleurs.Neutre900, Couleurs.Separateur) {
+            Icone(R.drawable.ic_arrow_counter_clockwise, couleur = Couleurs.Neutre200)
+        }
     }
-}
-
-@Composable
-private fun BoutonRond(@DrawableRes icone: Int, fond: Color, bordure: Color, couleur: Color) {
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .clip(CircleShape)
-            .background(fond)
-            .border(1.dp, bordure, CircleShape),
-        contentAlignment = Alignment.Center,
-    ) { Icone(icone, taille = 22.dp, couleur = couleur) }
 }
 
 private val Icones = listOf(

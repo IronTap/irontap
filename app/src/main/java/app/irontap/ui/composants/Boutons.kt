@@ -7,9 +7,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +25,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -148,4 +153,66 @@ fun EtiquetteLibelle(libelle: String, modifier: Modifier = Modifier) {
             .background(Couleurs.Accent800)
             .padding(horizontal = 10.dp, vertical = 3.dp),
     )
+}
+
+/**
+ * Bouton rond (Play/Pause et Relancer du chrono, +X des champs). Le retour visuel est le changement
+ * de fond et de contour à l'appui, comme dans les maquettes.
+ */
+@Composable
+fun BoutonRond(
+    onClick: () -> Unit,
+    taille: Dp,
+    fond: Color,
+    fondAppuye: Color,
+    bordure: Color,
+    modifier: Modifier = Modifier,
+    bordureAppuyee: Color = bordure,
+    description: String? = null,
+    contenu: @Composable () -> Unit,
+) {
+    val interactions = remember { MutableInteractionSource() }
+    val appuye by interactions.collectIsPressedAsState()
+    Box(
+        modifier = modifier
+            .size(taille)
+            .clip(CircleShape)
+            .background(if (appuye) fondAppuye else fond)
+            .border(1.dp, if (appuye) bordureAppuyee else bordure, CircleShape)
+            .clickable(interactions, indication = null, role = Role.Button, onClick = onClick)
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
+        contentAlignment = Alignment.Center,
+    ) { contenu() }
+}
+
+/**
+ * Bouton texte sans fond ni contour (« Annuler » des dialogues : accent-300 ; lien discret
+ * « Terminer l'entraînement » : neutre-400). Appuyé : voile de texte à 6 %.
+ */
+@Composable
+fun BoutonTexte(
+    texte: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    @DrawableRes icone: Int? = null,
+    couleur: Color = Couleurs.Accent300,
+    style: TextStyle = Typo.Action,
+    tailleIcone: Dp = 17.dp,
+    margeHorizontale: Dp = 18.dp,
+) {
+    val interactions = remember { MutableInteractionSource() }
+    val appuye by interactions.collectIsPressedAsState()
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .clip(Formes.Moyenne)
+            .background(if (appuye) Couleurs.Texte.copy(alpha = 0.06f) else Color.Transparent)
+            .clickable(interactions, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = margeHorizontale),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icone != null) Icone(icone, taille = tailleIcone, couleur = couleur)
+        Text(texte, style = style, color = couleur)
+    }
 }

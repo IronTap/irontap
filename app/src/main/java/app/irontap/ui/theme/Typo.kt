@@ -1,11 +1,15 @@
 package app.irontap.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -45,6 +49,8 @@ object Typo {
      * Chrono : 40 / 500, −0,02 em, interligne 1.
      * Affiché en `MM:SS` (voir DECISIONS.md) : en chiffres tabulaires, `HH:MM:SS` mesure ≈ 172 dp,
      * plus que la place laissée par les deux boutons du bandeau (≈ 168 dp).
+     * Compose ne réduit pas une ligne seule sous la hauteur naturelle de la police (≈ 48,7 dp ici) :
+     * afficher avec `Modifier.hauteurLigne(40.dp)` pour retrouver la boîte de 40 dp des maquettes.
      */
     val Chrono = style(40).copy(letterSpacing = (-0.02).em, lineHeight = 1.em)
 
@@ -96,6 +102,9 @@ object Typo {
     /** Bouton texte (Annuler, Terminer, « + Ajouter une série ») : 15 / 500, interligne naturel. */
     val Action = style(15).interligneNaturel()
 
+    /** Rappel « Exercice N · Série M » de l'en-tête de saisie : 15 / 500. */
+    val EnteteSaisie = style(15)
+
     /** Texte courant, éléments du menu ⋮ : 15 / 400. */
     val Corps = style(15, FontWeight.Normal)
 
@@ -138,4 +147,14 @@ internal val TypographieMaterial: Typography = Typography().run {
         labelMedium = labelMedium.inter(),
         labelSmall = labelSmall.inter(),
     )
+}
+
+/**
+ * Hauteur de ligne inférieure à la hauteur naturelle de la police, comme `line-height` en CSS :
+ * le texte est mesuré normalement puis centré dans une boîte de [hauteur] (il peut en déborder).
+ */
+fun Modifier.hauteurLigne(hauteur: Dp): Modifier = layout { mesurable, contraintes ->
+    val texte = mesurable.measure(contraintes.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+    val boite = hauteur.roundToPx()
+    layout(texte.width, boite) { texte.place(0, (boite - texte.height) / 2) }
 }

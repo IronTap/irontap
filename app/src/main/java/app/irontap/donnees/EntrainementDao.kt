@@ -100,7 +100,8 @@ abstract class EntrainementDao {
      * Enregistre une série de l'entraînement en cours et relance le chrono.
      * La série ouvre un nouvel exercice nommé [nomExercice] si c'est la première de l'entraînement
      * ou si la précédente a été suivie de « Nouvel exercice » ; sinon [nomExercice] est ignoré
-     * (nom verrouillé). Retourne la série enregistrée, avec son numéro.
+     * (nom verrouillé). Retourne la série enregistrée, avec son numéro, ou `null` sans rien enregistrer
+     * si un nouvel exercice doit être ouvert et que [nomExercice] est vide.
      */
     @Transaction
     open suspend fun enregistrerSerie(
@@ -111,12 +112,11 @@ abstract class EntrainementDao {
         suite: Suite,
         maintenant: Instant,
         realtime: Long,
-    ): Serie {
+    ): Serie? {
         val entrainement = checkNotNull(lire(entrainementId)) { "Entraînement $entrainementId introuvable" }
         val dernier = lireDernierExercice(entrainementId)
         val exerciceId = if (dernier == null || entrainement.nouvelExercice) {
-            val nom = nomExercice.trim()
-            require(nom.isNotEmpty()) { "Nom d'exercice vide" }
+            val nom = nomExercice.trim().ifEmpty { return null }
             inserer(Exercice(entrainementId = entrainementId, nom = nom, ordre = (dernier?.ordre ?: 0) + 1))
         } else {
             dernier.id

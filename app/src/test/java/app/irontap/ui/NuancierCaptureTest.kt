@@ -25,7 +25,7 @@ class NuancierCaptureTest {
 
     @Test
     fun nuancier() {
-        compose.setContent { IronTapTheme { Nuancier() } }
+        compose.setContent { IronTapTheme { Nuancier(onSaisie = {}) } }
         compose.onRoot().captureRoboImage()
     }
 }

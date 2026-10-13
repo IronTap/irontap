@@ -99,14 +99,14 @@ class EntrainementDaoTest {
         val id = dao.creerEntrainement(lundi, null, t0)
 
         val s1 = serie(id, nom = "  Tirage vertical ", poids = 40.0, reps = 15)
-        assertEquals(1, s1.ordre)
+        assertEquals(1, s1?.ordre)
         // Nom verrouillé : celui passé est ignoré.
         serie(id, nom = "ignoré", poids = 45.0, reps = 12, suite = Suite.NouvelExercice)
         assertTrue(dao.lireEnCours()!!.nouvelExercice)
         serie(id, nom = "Curl haltères", poids = 12.5, reps = 12)
         assertEquals(false, dao.lireEnCours()!!.nouvelExercice)
         val s4 = serie(id, poids = null, reps = 8)
-        assertEquals(2, s4.ordre)
+        assertEquals(2, s4?.ordre)
 
         assertEquals(
             listOf("1.Tirage vertical: 1/40.0×15, 2/45.0×12", "2.Curl haltères: 1/12.5×12, 2/null×8"),
@@ -115,9 +115,9 @@ class EntrainementDaoTest {
     }
 
     @Test
-    fun `un nouvel exercice sans nom est refuse sans rien enregistrer`() = runTest {
+    fun `un nouvel exercice sans nom n'enregistre rien`() = runTest {
         val id = dao.creerEntrainement(lundi, null, t0)
-        echoue<IllegalArgumentException> { serie(id, nom = "  ") }
+        assertNull(serie(id, nom = "  "))
         assertTrue(exercices(id).isEmpty())
         assertEquals(EtatChrono(id), dao.lireChrono(id))
     }
@@ -167,7 +167,7 @@ class EntrainementDaoTest {
         val s2 = serie(id, reps = 12)
         serie(id, reps = 10)
 
-        dao.supprimerSerie(s2.id)
+        dao.supprimerSerie(s2!!.id)
 
         assertEquals(listOf("1.Tirage: 1/40.0×15, 2/40.0×10"), resume(id))
     }
@@ -180,7 +180,7 @@ class EntrainementDaoTest {
         serie(id, nom = "Dips")
         dao.terminer(id, t0)
 
-        dao.supprimerSerie(seule.id)
+        dao.supprimerSerie(seule!!.id)
 
         assertEquals(listOf("1.Tirage: 1/40.0×10", "2.Dips: 1/40.0×10"), resume(id))
         // Un entraînement sans exercice reste dans l'historique.
@@ -199,7 +199,7 @@ class EntrainementDaoTest {
         val plusTard = t0.plusSeconds(86_400)
 
         dao.renommerExercice(exercice.id, "  Tirage vertical ")
-        dao.modifierSerie(s1.id, 41.25, 14, plusTard)
+        dao.modifierSerie(s1!!.id, 41.25, 14, plusTard)
         val ajout = dao.ajouterSerie(exercice.id, null, 20, plusTard)
 
         assertEquals(2, ajout.ordre)
