@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Seules les couleurs utiles hors Compose (fenêtre, icône). Les tokens Nocturne vivent dans le thème Compose. -->
+    <color name="nocturne_bg">#161826</color>
+    <color name="nocturne_accent">#9184D9</color>
+</resources>
