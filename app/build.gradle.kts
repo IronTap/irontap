@@ -93,6 +93,9 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 
+    // Room en mémoire sur JVM (Robolectric).
+    testImplementation(libs.androidx.test.core)
+
     // Captures d'écran sur JVM (Robolectric + Roborazzi) : pas d'émulateur dans WSL.
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)

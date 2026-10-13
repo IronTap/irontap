@@ -48,6 +48,15 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 - **Affichage `MM:SS`** au lieu de `HH:MM:SS` (spec §4.3.4) : en chiffres tabulaires, le format long déborde du bandeau, et un repos ne dépasse pas l'heure. Au-delà, les minutes continuent (`75:12`). Le chronomètre système de la notification affiche lui aussi `MM:SS` sous l'heure.
 - **Le redémarrage du téléphone n'est pas géré** : le chrono ne sert qu'à suivre le repos entre deux séries. Le temps calculé est seulement borné à 0, pour ne pas planter si `elapsedRealtime` a été remis à zéro.
 
+## Modèle de données
+
+Spec §6, avec ces précisions :
+
+- **`Entrainement.nouvel_exercice`** (ajout) : vrai après « Nouvel exercice ». Sans lui, à la reprise (spec §4.3.7), impossible de savoir si la prochaine série continue l'exercice courant (nom verrouillé) ou en ouvre un nouveau (nom éditable).
+- `EtatChrono` est supprimé à la fin de l'entraînement ; suppressions en cascade (entraînement → exercices → séries, chrono).
+- Dates en texte ISO (`2026-10-12`), horodatages en millisecondes ; poids en `REAL` (les multiples de 0,25 sont exacts en binaire).
+- Schéma exporté dans `app/schemas/` et versionné : toute modification après la première installation demande une migration.
+
 ## Environnement de développement
 
 - Développement dans **WSL2** (projet personnel, séparé de l'infrastructure de l'entreprise).
