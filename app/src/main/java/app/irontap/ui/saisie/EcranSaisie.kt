@@ -85,6 +85,7 @@ import app.irontap.ui.composants.ChampTexte
 import app.irontap.ui.composants.DialogueNocturne
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.LibelleChamp
+import app.irontap.ui.composants.ListeSuggestions
 import app.irontap.ui.composants.MessageErreur
 import app.irontap.ui.composants.RangeeAjouts
 import app.irontap.ui.composants.tempsEcouleMs
@@ -382,47 +383,6 @@ private fun Modifier.contourPointille(couleur: Color) = drawBehind {
         cornerRadius = CornerRadius(14.dp.toPx() - trait / 2),
         style = Stroke(width = trait, pathEffect = PathEffect.dashPathEffect(floatArrayOf(tiret, tiret))),
     )
-}
-
-/** Menu d'autocomplétion : surface, élévation md, lignes de 52 dp ; la partie correspondante en 600 accent-200. */
-@Composable
-private fun ListeSuggestions(suggestions: List<Suggestion>, onChoisir: (Suggestion) -> Unit, modifier: Modifier) {
-    Column(
-        modifier = modifier
-            .elevation(Elevation.Md, Formes.Grande)
-            .background(Couleurs.Surface, Formes.Grande)
-            .clip(Formes.Grande)
-            .padding(vertical = 4.dp),
-    ) {
-        suggestions.forEach { suggestion ->
-            val interactions = remember { MutableInteractionSource() }
-            val appuye by interactions.collectIsPressedAsState()
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .background(if (appuye) Couleurs.Neutre800 else Color.Transparent)
-                    .clickable(interactions, indication = null, role = Role.Button) { onChoisir(suggestion) }
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text(
-                    text = buildAnnotatedString {
-                        val nom = suggestion.nom
-                        append(nom, 0, suggestion.debut)
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Couleurs.Accent200)) {
-                            append(nom, suggestion.debut, suggestion.fin)
-                        }
-                        append(nom, suggestion.fin, nom.length)
-                    },
-                    style = Typo.Suggestion,
-                    color = Couleurs.Texte,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
 }
 
 // --- Actions, toast, dialogues ---

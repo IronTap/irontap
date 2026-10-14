@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -54,8 +55,8 @@ fun MessageErreur(texte: String, modifier: Modifier = Modifier) {
 }
 
 /** Fond et contour d'un champ : surface, rayon 14, filet séparateur, ou 2 dp couleur erreur. */
-fun Modifier.cadreChamp(erreur: Boolean = false, focus: Boolean = false): Modifier = this
-    .background(Couleurs.Surface, Formes.Grande)
+fun Modifier.cadreChamp(erreur: Boolean = false, focus: Boolean = false, fond: Color = Couleurs.Surface): Modifier = this
+    .background(fond, Formes.Grande)
     .border(
         width = if (erreur) 2.dp else 1.dp,
         color = when {
@@ -108,14 +109,17 @@ fun ChampTexte(
     )
 }
 
-/** Champ « Poids » : 62 dp, valeur 38 sp, « kg » à droite. Chiffres et un séparateur décimal (point ou virgule). */
+/**
+ * Champ « Poids » : 62 dp, valeur 38 sp, « kg » à droite. Chiffres et un séparateur décimal (point ou virgule).
+ * [fond] : surface sur l'écran, `bg` dans la feuille d'édition (contraste avec la feuille).
+ */
 @Composable
-fun ChampPoids(etat: TextFieldState, modifier: Modifier = Modifier) {
+fun ChampPoids(etat: TextFieldState, modifier: Modifier = Modifier, fond: Color = Couleurs.Surface) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(62.dp)
-            .cadreChamp()
+            .cadreChamp(fond = fond)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -131,12 +135,12 @@ fun ChampPoids(etat: TextFieldState, modifier: Modifier = Modifier) {
 
 /** Champ « Nombre de répétitions » : 62 dp, valeur 38 sp, entier de 3 chiffres au plus. */
 @Composable
-fun ChampRepetitions(etat: TextFieldState, erreur: Boolean, modifier: Modifier = Modifier) {
+fun ChampRepetitions(etat: TextFieldState, erreur: Boolean, modifier: Modifier = Modifier, fond: Color = Couleurs.Surface) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(62.dp)
-            .cadreChamp(erreur)
+            .cadreChamp(erreur, fond = fond)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -175,7 +179,7 @@ private fun ChampValeur(
 
 /** Rangée de boutons +X ronds de 58 dp, répartis sur la largeur, 8 dp sous le champ. */
 @Composable
-fun RangeeAjouts(valeurs: List<Int>, onAjout: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun RangeeAjouts(valeurs: List<Int>, onAjout: (Int) -> Unit, modifier: Modifier = Modifier, fond: Color = Couleurs.Surface) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -186,7 +190,7 @@ fun RangeeAjouts(valeurs: List<Int>, onAjout: (Int) -> Unit, modifier: Modifier 
             BoutonRond(
                 onClick = { onAjout(valeur) },
                 taille = 58.dp,
-                fond = Couleurs.Surface,
+                fond = fond,
                 fondAppuye = Couleurs.Accent800,
                 bordure = Couleurs.Separateur,
                 bordureAppuyee = Couleurs.Accent,

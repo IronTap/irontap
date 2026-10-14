@@ -68,6 +68,10 @@ Spec §6, avec ces précisions :
 - **« Nouvel entraînement » avec un entraînement en cours** (spec §4.1, sans maquette) : dialogue « Terminer l'entraînement en cours ? » au style de 4b. Confirmer le termine (ou le supprime s'il n'a aucune série, comme §4.3.6), puis ouvre l'écran 2.
 - **Sélecteur de date (2b)** : calendrier Material dans la fenêtre des dialogues Nocturne (voile neutre-900, rayon 24, élévation lg). Il ne descend pas sous 360 dp de large : la marge de 20 dp se réduit sur les écrans de moins de 400 dp.
 - Bandeau « en cours » de l'accueil (1c) : chrono en `MM:SS` comme partout ailleurs.
+- **Renommer un exercice** (spec §4.4, sans maquette) : dialogue « Renommer l'exercice » avec le champ et l'autocomplétion de la saisie (liste dans le dialogue, sous le champ), Annuler / Enregistrer.
+- **Supprimer une série** (6b) : la fin du texte s'adapte. « Les séries suivantes seront renumérotées » seulement s'il y en a ; pour la seule série d'un exercice, « l'exercice sera retiré de l'entraînement ». Supprimer l'entraînement (menu ⋮) : confirmation au même style, « Cette action est définitive ».
+- **Balayage** : la zone « Supprimer » raccourcit la ligne (comme la maquette 6b) au lieu de la pousser hors de l'écran ; la ligne reste ouverte derrière le dialogue et se referme si on annule.
+- Feuilles du bas sans ombre lg : avec la feuille Material, l'ombre serait dessinée en haut de l'écran ; le voile suffit.
 
 ## Environnement de développement
 

@@ -11,6 +11,9 @@ import androidx.navigation.toRoute
 import app.irontap.donnees.Entrainement
 import app.irontap.ui.accueil.ActionsAccueil
 import app.irontap.ui.accueil.EcranAccueil
+import app.irontap.ui.detail.DetailViewModel
+import app.irontap.ui.detail.EcranDetail
+import app.irontap.ui.detail.NavigationDetail
 import app.irontap.ui.entrainement.EcranFormulaireEntrainement
 import app.irontap.ui.entrainement.FormulaireEntrainementViewModel
 import app.irontap.ui.saisie.EcranSaisie
@@ -30,6 +33,9 @@ data class ModifierEntrainement(val id: Long)
 @Serializable
 data object Saisie
 
+@Serializable
+data class Detail(val id: Long)
+
 /** [demandesSaisie] : compteur d'appuis sur la notification du chrono, qui ramènent à l'écran de saisie. */
 @Composable
 fun IronTapApp(demandesSaisie: Int = 0) {
@@ -42,8 +48,11 @@ fun IronTapApp(demandesSaisie: Int = 0) {
                         override fun nouvelEntrainement() = navController.navigate(NouvelEntrainement) { launchSingleTop = true }
                         override fun reprendre() = navController.ouvrirSaisie()
 
-                        // Détail (écran 4) et export (§5) : étapes suivantes.
-                        override fun ouvrir(entrainement: Entrainement) = Unit
+                        override fun ouvrir(entrainement: Entrainement) = navController.navigate(Detail(entrainement.id)) {
+                            launchSingleTop = true
+                        }
+
+                        // Export (§5) : étape suivante.
                         override fun exporter() = Unit
                     },
                 )
@@ -61,6 +70,24 @@ fun IronTapApp(demandesSaisie: Int = 0) {
                     vm = viewModel(factory = FormulaireEntrainementViewModel.fabrique(route.id)),
                     onLance = {},
                     onFermer = { navController.popBackStack<ModifierEntrainement>(inclusive = true) },
+                )
+            }
+            composable<Detail> { entree ->
+                val route = entree.toRoute<Detail>()
+                EcranDetail(
+                    vm = viewModel(factory = DetailViewModel.fabrique(route.id)),
+                    navigation = object : NavigationDetail {
+                        override fun retour() {
+                            navController.popBackStack<Detail>(inclusive = true)
+                        }
+
+                        override fun modifierEntrainement() = navController.navigate(ModifierEntrainement(route.id)) {
+                            launchSingleTop = true
+                        }
+
+                        // Export (§5) : étape suivante.
+                        override fun exporter() = Unit
+                    },
                 )
             }
             composable<Saisie> {

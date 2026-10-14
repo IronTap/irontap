@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -41,8 +43,11 @@ fun DialogueNocturne(
     contenu: @Composable ColumnScope.() -> Unit,
 ) {
     FenetreDialogue(onFermer = onFermer, forme = Formes.Grande) {
+        // Défilable : avec le clavier ouvert, les boutons restent atteignables même si la carte manque de place.
         Column(
-            modifier = Modifier.padding(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 16.dp),
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(titre, style = Typo.TitreDialogue, color = Couleurs.Texte)
