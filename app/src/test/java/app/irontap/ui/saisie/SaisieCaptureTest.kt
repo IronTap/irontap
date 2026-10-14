@@ -1,11 +1,21 @@
 package app.irontap.ui.saisie
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTextExactly
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
@@ -68,19 +78,22 @@ class SaisieCaptureTest {
         nom: String = "",
         poids: String = "",
         repetitions: String = "",
+        hauteurVisible: Dp? = null,
     ) {
         compose.setContent {
             IronTapTheme {
-                ContenuSaisie(
-                    etat = EtatSaisie.EnCours(entrainement, exercices, chrono),
-                    formulaire = formulaire,
-                    suggestions = suggestions,
-                    nom = TextFieldState(nom),
-                    poids = TextFieldState(poids),
-                    repetitions = TextFieldState(repetitions),
-                    realtime = { 72_000 },
-                    actions = SansAction,
-                )
+                Box(if (hauteurVisible != null) Modifier.height(hauteurVisible) else Modifier) {
+                    ContenuSaisie(
+                        etat = EtatSaisie.EnCours(entrainement, exercices, chrono),
+                        formulaire = formulaire,
+                        suggestions = suggestions,
+                        nom = TextFieldState(nom),
+                        poids = TextFieldState(poids),
+                        repetitions = TextFieldState(repetitions),
+                        realtime = { 72_000 },
+                        actions = SansAction,
+                    )
+                }
             }
         }
     }
@@ -143,5 +156,16 @@ class SaisieCaptureTest {
         afficher(exercices = listOf(tirage), formulaire = Formulaire(dialogue = DialogueFin.Simple))
         compose.waitForIdle()
         captureScreenRoboImage()
+    }
+
+    /** Clavier ouvert : la hauteur visible se réduit, le contenu défile sans être comprimé. */
+    @Test
+    fun clavierOuvert() {
+        afficher(exercices = listOf(tirage), hauteurVisible = 400.dp)
+        val nouvelleSerie = hasClickAction() and hasText("Nouvelle", substring = true)
+        compose.onNode(hasScrollAction() and !hasSetTextAction()).performScrollToNode(nouvelleSerie)
+        compose.onNode(nouvelleSerie).assertHeightIsEqualTo(72.dp)
+        compose.onNode(hasClickAction() and hasText("Nouvel\nexercice")).assertHeightIsEqualTo(72.dp)
+        compose.onRoot().captureRoboImage()
     }
 }

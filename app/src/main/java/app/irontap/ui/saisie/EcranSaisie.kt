@@ -175,14 +175,11 @@ fun ContenuSaisie(
                     // Un appui dans le vide ferme le clavier.
                     .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } },
             ) {
-                // Au moins la hauteur de l'écran, pour pousser les actions en bas ; défile si le clavier est ouvert.
+                // Au moins la hauteur visible, pour pousser les actions en bas. Seul l'espace vide est extensible :
+                // quand le clavier réduit la hauteur visible, le contenu garde sa taille et défile.
                 Column(Modifier.heightIn(min = hauteurVisible)) {
                     EnTete(etat)
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(horizontal = 16.dp),
-                    ) {
+                    Column(Modifier.padding(horizontal = 16.dp)) {
                         BandeauChrono(etat.chrono, realtime, actions)
                         Spacer(Modifier.height(14.dp))
                         LibelleChamp("Nom de l’exercice")
@@ -212,9 +209,10 @@ fun ContenuSaisie(
                         if (formulaire.erreurRepetitions) {
                             MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 6.dp))
                         }
-                        Spacer(Modifier.weight(1f))
-                        Actions(actions)
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.weight(1f))
+                    Actions(actions, Modifier.padding(horizontal = 16.dp))
                 }
             }
         }
@@ -349,8 +347,8 @@ private fun BandeauChrono(chrono: EtatChrono?, realtime: () -> Long, actions: Ac
             if (enCours) {
                 Icone(R.drawable.ic_pause, couleur = Couleurs.Accent300)
             } else {
-                // Décalage optique du triangle, comme dans la maquette.
-                Icone(R.drawable.ic_play, Modifier.offset(x = 1.5.dp), couleur = Couleurs.Accent300)
+                // Pas de décalage (contrairement à la maquette) : le tracé Phosphor intègre déjà le centrage optique.
+                Icone(R.drawable.ic_play, couleur = Couleurs.Accent300)
             }
         }
         BoutonRond(
@@ -475,33 +473,35 @@ private fun ListeSuggestions(suggestions: List<Suggestion>, onChoisir: (Suggesti
 // --- Actions, toast, dialogues ---
 
 @Composable
-private fun Actions(actions: ActionsSaisie) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        BoutonPrincipal(
-            texte = "Nouvelle\nsérie",
-            onClick = { actions.enregistrer(Suite.NouvelleSerie) },
-            modifier = Modifier.weight(1f),
-            hauteur = 72.dp,
-        )
-        BoutonSecondaire(
-            texte = "Nouvel\nexercice",
-            onClick = { actions.enregistrer(Suite.NouvelExercice) },
-            modifier = Modifier.weight(1f),
-            hauteur = 72.dp,
-            style = Typo.GrandeAction,
-            couleurTexte = Couleurs.Texte,
+private fun Actions(actions: ActionsSaisie, modifier: Modifier) {
+    Column(modifier) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BoutonPrincipal(
+                texte = "Nouvelle\nsérie",
+                onClick = { actions.enregistrer(Suite.NouvelleSerie) },
+                modifier = Modifier.weight(1f),
+                hauteur = 72.dp,
+            )
+            BoutonSecondaire(
+                texte = "Nouvel\nexercice",
+                onClick = { actions.enregistrer(Suite.NouvelExercice) },
+                modifier = Modifier.weight(1f),
+                hauteur = 72.dp,
+                style = Typo.GrandeAction,
+                couleurTexte = Couleurs.Texte,
+            )
+        }
+        BoutonTexte(
+            texte = "Terminer l’entraînement",
+            onClick = actions::demanderFin,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            icone = R.drawable.ic_flag,
+            couleur = Couleurs.Neutre400,
+            style = Typo.Discret,
         )
     }
-    BoutonTexte(
-        texte = "Terminer l’entraînement",
-        onClick = actions::demanderFin,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp),
-        icone = R.drawable.ic_flag,
-        couleur = Couleurs.Neutre400,
-        style = Typo.Discret,
-    )
 }
 
 /** Toast : neutre-800, rayon 8, élévation md, ✓ accent-300 et texte 14 neutre-100. */
