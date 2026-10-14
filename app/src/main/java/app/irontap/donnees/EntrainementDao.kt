@@ -62,8 +62,8 @@ abstract class EntrainementDao {
     /** Un entraînement, ses exercices et ses séries, lus ensemble (détail). `null` une fois supprimé. */
     fun observerComplet(id: Long): Flow<EntrainementComplet?> = observerCompletBrut(id).map { it?.trie() }
 
-    /** Tout l'historique terminé, dans l'ordre de l'accueil (export). */
-    suspend fun lireHistoriqueComplet(): List<EntrainementComplet> = lireHistoriqueCompletBrut().map { it.trie() }
+    /** Tout l'historique terminé, dans l'ordre de l'accueil, lu en une transaction (export). */
+    fun observerHistoriqueComplet(): Flow<List<EntrainementComplet>> = observerHistoriqueCompletBrut().map { liste -> liste.map { it.trie() } }
 
     @Query("SELECT * FROM entrainement WHERE termine_le IS NULL LIMIT 1")
     abstract suspend fun lireEnCours(): Entrainement?
@@ -216,7 +216,7 @@ abstract class EntrainementDao {
 
     @Transaction
     @Query("SELECT * FROM entrainement WHERE termine_le IS NOT NULL ORDER BY date DESC, cree_le DESC")
-    protected abstract suspend fun lireHistoriqueCompletBrut(): List<EntrainementComplet>
+    protected abstract fun observerHistoriqueCompletBrut(): Flow<List<EntrainementComplet>>
 
     @Query("SELECT * FROM entrainement WHERE id = :id")
     protected abstract suspend fun lire(id: Long): Entrainement?

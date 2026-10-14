@@ -51,9 +51,6 @@ fun IronTapApp(demandesSaisie: Int = 0) {
                         override fun ouvrir(entrainement: Entrainement) = navController.navigate(Detail(entrainement.id)) {
                             launchSingleTop = true
                         }
-
-                        // Export (§5) : étape suivante.
-                        override fun exporter() = Unit
                     },
                 )
             }
@@ -84,9 +81,6 @@ fun IronTapApp(demandesSaisie: Int = 0) {
                         override fun modifierEntrainement() = navController.navigate(ModifierEntrainement(route.id)) {
                             launchSingleTop = true
                         }
-
-                        // Export (§5) : étape suivante.
-                        override fun exporter() = Unit
                     },
                 )
             }

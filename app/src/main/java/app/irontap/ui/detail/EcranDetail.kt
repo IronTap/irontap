@@ -65,6 +65,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import app.irontap.R
 import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EntrainementComplet
@@ -83,6 +84,8 @@ import app.irontap.ui.composants.DialogueNocturne
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.ListeSuggestions
 import app.irontap.ui.composants.MessageErreur
+import app.irontap.ui.export.ExportViewModel
+import app.irontap.ui.export.FeuilleExport
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Formes
 import app.irontap.ui.theme.Typo
@@ -92,7 +95,6 @@ import kotlin.math.roundToInt
 interface NavigationDetail {
     fun retour()
     fun modifierEntrainement()
-    fun exporter()
 }
 
 /** Gestes sur le contenu du détail, implémentés par [DetailViewModel] (via [EcranDetail]). */
@@ -115,10 +117,12 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
         if (etat == EtatDetail.Introuvable) LaunchedEffect(Unit) { navigation.retour() }
         return
     }
+    var exporter by rememberSaveable { mutableStateOf(false) }
     ContenuDetail(
         complet = pret.complet,
         serieRevelee = panneaux.suppression?.serie?.id ?: panneaux.serieEnSuppression,
         navigation = navigation,
+        onExporter = { exporter = true },
         onSupprimerEntrainement = vm::demanderSuppressionEntrainement,
         actions = object : ActionsDetail {
             override fun modifierSerie(exercice: Exercice, serie: Serie) = vm.ouvrirEdition(exercice, serie)
@@ -170,6 +174,10 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             onSupprimer = vm::supprimerEntrainement,
         )
     }
+    // Cet entraînement seul (spec §5).
+    if (exporter) {
+        FeuilleExport(vm = viewModel(factory = ExportViewModel.fabrique(pret.complet.entrainement.id)), onFermer = { exporter = false })
+    }
 }
 
 /**
@@ -181,6 +189,7 @@ fun ContenuDetail(
     complet: EntrainementComplet,
     serieRevelee: Long?,
     navigation: NavigationDetail,
+    onExporter: () -> Unit,
     onSupprimerEntrainement: () -> Unit,
     actions: ActionsDetail,
     menuOuvert: Boolean = false,
@@ -191,7 +200,7 @@ fun ContenuDetail(
             .background(Couleurs.Fond)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
     ) {
-        EnTete(complet, navigation, onSupprimerEntrainement, menuOuvert)
+        EnTete(complet, navigation, onExporter, onSupprimerEntrainement, menuOuvert)
         val basEcran = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -217,7 +226,13 @@ fun ContenuDetail(
 
 /** En-tête 68 dp : ←, date 19 / 500 au-dessus de « libellé · N exercices », menu ⋮. */
 @Composable
-private fun EnTete(complet: EntrainementComplet, navigation: NavigationDetail, onSupprimer: () -> Unit, menuOuvert: Boolean) {
+private fun EnTete(
+    complet: EntrainementComplet,
+    navigation: NavigationDetail,
+    onExporter: () -> Unit,
+    onSupprimer: () -> Unit,
+    menuOuvert: Boolean,
+) {
     val entrainement = complet.entrainement
     var menu by rememberSaveable { mutableStateOf(menuOuvert) }
     Row(
@@ -246,7 +261,7 @@ private fun EnTete(complet: EntrainementComplet, navigation: NavigationDetail, o
                 ouvert = menu,
                 onFermer = { menu = false },
                 onModifier = navigation::modifierEntrainement,
-                onExporter = navigation::exporter,
+                onExporter = onExporter,
                 onSupprimer = onSupprimer,
             )
         }

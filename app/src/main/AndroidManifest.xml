@@ -35,6 +35,17 @@
         <receiver
             android:name=".notification.RecepteurChrono"
             android:exported="false" />
+
+        <!-- Partage de l'export : non exporté, accès accordé fichier par fichier, limité à cache/exports. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.exports"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/chemins_export" />
+        </provider>
     </application>
 
 </manifest>

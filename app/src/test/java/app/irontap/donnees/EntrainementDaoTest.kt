@@ -237,7 +237,7 @@ class EntrainementDaoTest {
         val complet = dao.lireComplet(id)!!
         assertEquals(listOf("Tirage", "Curl"), complet.exercices.map { it.exercice.nom })
         assertEquals(listOf(15, 12), complet.exercices.first().series.map { it.repetitions })
-        assertEquals(listOf(id), dao.lireHistoriqueComplet().map { it.entrainement.id })
+        assertEquals(listOf(id), dao.observerHistoriqueComplet().first().map { it.entrainement.id })
     }
 
     @Test

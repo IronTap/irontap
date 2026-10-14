@@ -58,7 +58,6 @@ class DetailCaptureTest {
     private object SansNavigation : NavigationDetail {
         override fun retour() = Unit
         override fun modifierEntrainement() = Unit
-        override fun exporter() = Unit
     }
 
     private open class SansAction : ActionsDetail {
@@ -83,7 +82,7 @@ class DetailCaptureTest {
         pardessus: @androidx.compose.runtime.Composable () -> Unit = {},
     ) = compose.setContent {
         IronTapTheme {
-            ContenuDetail(complet, serieRevelee, SansNavigation, onSupprimerEntrainement = {}, actions, menuOuvert)
+            ContenuDetail(complet, serieRevelee, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, actions, menuOuvert)
             pardessus()
         }
     }

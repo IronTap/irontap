@@ -58,11 +58,10 @@ class AccueilCaptureTest {
         override fun nouvelEntrainement() = Unit
         override fun reprendre() = Unit
         override fun ouvrir(entrainement: Entrainement) = Unit
-        override fun exporter() = Unit
     }
 
     private fun afficher(etat: EtatAccueil.Pret) = compose.setContent {
-        IronTapTheme { ContenuAccueil(etat, realtime = { 72_000 }, actions = SansAction) }
+        IronTapTheme { ContenuAccueil(etat, realtime = { 72_000 }, onExporter = {}, actions = SansAction) }
     }
 
     @Test
@@ -87,7 +86,7 @@ class AccueilCaptureTest {
     fun dialogueTerminerEnCours() {
         compose.setContent {
             IronTapTheme {
-                ContenuAccueil(EtatAccueil.Pret(historique, enCours), realtime = { 72_000 }, actions = SansAction)
+                ContenuAccueil(EtatAccueil.Pret(historique, enCours), realtime = { 72_000 }, onExporter = {}, actions = SansAction)
                 DialogueTerminerEnCours(avecSeries = true, onAnnuler = {}, onTerminer = {})
             }
         }

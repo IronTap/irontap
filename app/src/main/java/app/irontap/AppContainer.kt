@@ -8,6 +8,7 @@ import app.irontap.donnees.BaseIronTap
 import app.irontap.donnees.Horloge
 import app.irontap.donnees.HorlogeSysteme
 import app.irontap.donnees.Reglages
+import app.irontap.export.Exporteur
 import app.irontap.notification.NotificationChrono
 import app.irontap.ui.saisie.BrouillonSaisie
 
@@ -28,6 +29,8 @@ class AppContainer(context: Context) {
     val horloge: Horloge = HorlogeSysteme
 
     val notificationChrono: NotificationChrono by lazy { NotificationChrono(appContext, base.entrainements(), horloge) }
+
+    val exporteur = Exporteur(appContext)
 
     /** Saisie en cours sur l'écran 3, conservée tant que l'application vit. */
     val brouillonSaisie = BrouillonSaisie()

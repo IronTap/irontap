@@ -64,6 +64,8 @@ import app.irontap.ui.composants.DialogueNocturne
 import app.irontap.ui.composants.EtiquetteLibelle
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.tempsEcouleMs
+import app.irontap.ui.export.ExportViewModel
+import app.irontap.ui.export.FeuilleExport
 import app.irontap.ui.saisie.EtatSaisie
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Formes
@@ -78,7 +80,6 @@ interface ActionsAccueil {
     fun nouvelEntrainement()
     fun reprendre()
     fun ouvrir(entrainement: Entrainement)
-    fun exporter()
 }
 
 /** Hauteur du dégradé qui sépare la liste du bouton ancré en bas. */
@@ -94,10 +95,12 @@ fun EcranAccueil(actions: ActionsAccueil, vm: AccueilViewModel = viewModel(facto
         return
     }
     var confirmer by rememberSaveable { mutableStateOf(false) }
+    var exporter by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     ContenuAccueil(
         etat = pret,
         realtime = vm::realtime,
+        onExporter = { exporter = true },
         actions = object : ActionsAccueil by actions {
             // Un seul entraînement en cours à la fois (spec §4.1) : on propose d'abord de terminer l'autre.
             override fun nouvelEntrainement() {
@@ -119,10 +122,12 @@ fun EcranAccueil(actions: ActionsAccueil, vm: AccueilViewModel = viewModel(facto
             },
         )
     }
+    // Tout l'historique (spec §5).
+    if (exporter) FeuilleExport(vm = viewModel(factory = ExportViewModel.fabrique(id = null)), onFermer = { exporter = false })
 }
 
 @Composable
-fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, actions: ActionsAccueil) {
+fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, onExporter: () -> Unit, actions: ActionsAccueil) {
     val vide = etat.historique.isEmpty() && etat.enCours == null
     Column(
         Modifier
@@ -130,7 +135,7 @@ fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, actions: Action
             .background(Couleurs.Fond)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
     ) {
-        EnTete(exportActif = etat.historique.isNotEmpty(), onExporter = actions::exporter)
+        EnTete(exportActif = etat.historique.isNotEmpty(), onExporter = onExporter)
         Box(Modifier.weight(1f)) {
             // Place réservée sous le contenu pour le bouton ancré en bas (et son dégradé).
             val basBouton = HauteurDegrade + (if (etat.enCours != null) 56.dp else 64.dp) +

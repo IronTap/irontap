@@ -126,6 +126,12 @@ object Typo {
     /** Petit texte (libellé au-dessus de l'en-tête de saisie) : 12 / 400. */
     val Petit = style(12, FontWeight.Normal)
 
+    /**
+     * Aperçu de l'export (écran 8) : 12 / 400 en chasse fixe, interligne 1,55. Police monospace du système :
+     * rien à embarquer pour un seul bloc de texte.
+     */
+    val Apercu = style(12, FontWeight.Normal).copy(fontFamily = FontFamily.Monospace, fontFeatureSettings = null)
+
     /** Étiquette de libellé d'entraînement : 11 / 400, +0,02 em (classe `.tag`). */
     val Etiquette = style(11, FontWeight.Normal).copy(letterSpacing = 0.02.em)
 

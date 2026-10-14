@@ -73,6 +73,16 @@ Spec §6, avec ces précisions :
 - **Balayage** : la zone « Supprimer » raccourcit la ligne (comme la maquette 6b) au lieu de la pousser hors de l'écran ; la ligne reste ouverte derrière le dialogue et se referme si on annule.
 - Feuilles du bas sans ombre lg : avec la feuille Material, l'ombre serait dessinée en haut de l'écran ; le voile suffit.
 
+## Export
+
+- **Portée** : depuis l'accueil, les entraînements terminés (l'entraînement en cours n'est pas exporté), dans l'ordre de l'accueil, du plus récent au plus ancien ; depuis le menu ⋮ du détail, cet entraînement seul. Le contenu suit la base tant que la feuille est ouverte.
+- **Texte** : format de la spec §5 ; « PDC × 12 » au poids du corps, comme dans l'appli ; une ligne vide entre les exercices, deux entre les entraînements.
+- **CSV** : colonnes de la spec, séparateur `;`, point décimal, poids vide au poids du corps, lignes en CRLF (RFC 4180). Un libellé ou un nom contenant `;`, `"` ou un saut de ligne est mis entre guillemets. Un champ commençant par `=`, `+`, `-`, `@`, tabulation ou retour chariot est préfixé d'une apostrophe (injection de formules, recommandation OWASP). Le fichier commence par une marque d'ordre d'octets UTF-8, pour qu'Excel affiche les accents.
+- **Partager…** : un texte de moins de 50 000 caractères part tel quel (`EXTRA_TEXT`, lisible dans une messagerie ou un bloc-notes) ; au-delà, et toujours pour le CSV, il part en pièce jointe. Le fichier est écrit dans `cache/exports/`, seul dossier exposé par le `FileProvider` (non exporté, lecture accordée à l'appli choisie seulement), et vidé à chaque nouvel export.
+- **Enregistrer le fichier** : sélecteur de document système (`CreateDocument`), nom proposé `irontap-2026-10-12.txt` (un entraînement) ou `irontap-historique-2026-10-14.csv` (tout l'historique, date du jour). Le document choisi est écrit en mode « wt » (contenu remplacé).
+- Après un partage ou un enregistrement réussi, la feuille se referme (enregistrement : toast système « Fichier enregistré », l'accueil et le détail n'ont pas de toast Nocturne). Un échec s'affiche dans la feuille, qui reste ouverte. La feuille rouverte repart du format Texte.
+- Aperçu : les 5 premières lignes en chasse fixe (police monospace du système) ; les lignes longues du CSV défilent horizontalement.
+
 ## Environnement de développement
 
 - Développement dans **WSL2** (projet personnel, séparé de l'infrastructure de l'entreprise).
