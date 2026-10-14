@@ -66,6 +66,9 @@ object Typo {
     /** Nom d'exercice et date dans un champ : 22 / 500, interligne naturel (champ). */
     val Champ = style(22).interligneNaturel()
 
+    /** Titre de la feuille de pré-permission (écran 9) : 22 / 500. */
+    val TitreFeuille = style(22)
+
     /** Titre de dialogue : 21 / 500. */
     val TitreDialogue = style(21)
 

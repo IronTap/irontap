@@ -168,4 +168,26 @@ class SaisieCaptureTest {
         compose.onNode(hasClickAction() and hasText("Nouvel\nexercice")).assertHeightIsEqualTo(72.dp)
         compose.onRoot().captureRoboImage()
     }
+
+    /** Écran 9 : pré-permission des notifications, par-dessus la saisie. */
+    @Test
+    fun prePermission() {
+        compose.setContent {
+            IronTapTheme {
+                ContenuSaisie(
+                    etat = EtatSaisie.EnCours(entrainement, emptyList(), EtatChrono(1, Etat.EnCours, demarreA = 0)),
+                    formulaire = Formulaire(),
+                    suggestions = emptyList(),
+                    nom = TextFieldState("Tirage vertical"),
+                    poids = TextFieldState("40"),
+                    repetitions = TextFieldState("15"),
+                    realtime = { 0 },
+                    actions = SansAction,
+                )
+                FeuillePrePermission(onAutoriser = {}, onPlusTard = {})
+            }
+        }
+        compose.waitForIdle()
+        captureScreenRoboImage()
+    }
 }

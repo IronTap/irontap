@@ -4,6 +4,9 @@
 
     <!-- Aucune permission INTERNET : l'application ne peut faire aucun appel réseau. -->
 
+    <!-- Notification du chrono (Android 13+), demandée après l'écran 9. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!--
         Sauvegarde : allowBackup="false" coupe tout jusqu'à Android 11 (fullBackupContent est donc inutile) ;
         à partir d'Android 12, les règles d'extraction excluent le cloud et permettent le transfert direct.
@@ -27,6 +30,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Boutons de la notification du chrono : non exporté, seules les intentions explicites de l'appli l'atteignent. -->
+        <receiver
+            android:name=".notification.RecepteurChrono"
+            android:exported="false" />
     </application>
 
 </manifest>

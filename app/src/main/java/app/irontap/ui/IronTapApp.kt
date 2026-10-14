@@ -1,6 +1,7 @@
 package app.irontap.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
@@ -20,8 +21,9 @@ data object Accueil
 @Serializable
 data object Saisie
 
+/** [demandesSaisie] : compteur d'appuis sur la notification du chrono, qui ramènent à l'écran de saisie. */
 @Composable
-fun IronTapApp() {
+fun IronTapApp(demandesSaisie: Int = 0) {
     IronTapTheme {
         val navController = rememberNavController()
         NavHost(navController = navController, startDestination = Accueil) {
@@ -44,6 +46,16 @@ fun IronTapApp() {
             }
             composable<Saisie> {
                 EcranSaisie(onQuitter = { navController.popBackStack<Saisie>(inclusive = true) })
+            }
+        }
+        // Après le NavHost : le graphe est défini quand l'effet s'exécute.
+        LaunchedEffect(demandesSaisie) {
+            if (demandesSaisie > 0) {
+                // Retour depuis la saisie : l'accueil, quel que soit l'écran d'où l'on vient (spec §3).
+                navController.navigate(Saisie) {
+                    popUpTo<Accueil>()
+                    launchSingleTop = true
+                }
             }
         }
     }

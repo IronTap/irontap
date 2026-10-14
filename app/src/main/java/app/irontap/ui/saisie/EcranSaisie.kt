@@ -125,16 +125,19 @@ fun EcranSaisie(onQuitter: () -> Unit, vm: SaisieViewModel = viewModel(factory =
     val formulaire by vm.formulaire.collectAsStateWithLifecycle()
     val suggestions by vm.suggestions.collectAsStateWithLifecycle()
     when (val e = etat) {
-        is EtatSaisie.EnCours -> ContenuSaisie(
-            etat = e,
-            formulaire = formulaire,
-            suggestions = suggestions,
-            nom = vm.nom,
-            poids = vm.poids,
-            repetitions = vm.repetitions,
-            realtime = vm::realtime,
-            actions = vm,
-        )
+        is EtatSaisie.EnCours -> {
+            ContenuSaisie(
+                etat = e,
+                formulaire = formulaire,
+                suggestions = suggestions,
+                nom = vm.nom,
+                poids = vm.poids,
+                repetitions = vm.repetitions,
+                realtime = vm::realtime,
+                actions = vm,
+            )
+            PrePermissionNotifications(chronoEnCours = e.chrono?.etat == EtatChrono.Etat.EnCours)
+        }
         EtatSaisie.Chargement, EtatSaisie.Aucun -> {
             Box(Modifier.fillMaxSize().background(Couleurs.Fond))
             if (e == EtatSaisie.Aucun) LaunchedEffect(Unit) { onQuitter() }

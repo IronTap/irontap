@@ -1,6 +1,7 @@
 package app.irontap
 
 import android.app.Application
+import app.irontap.notification.NotificationChrono
 
 class IronTapApplication : Application() {
 
@@ -10,5 +11,6 @@ class IronTapApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        NotificationChrono.creerCanal(this)
     }
 }

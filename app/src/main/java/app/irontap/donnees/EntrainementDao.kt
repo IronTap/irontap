@@ -65,6 +65,9 @@ abstract class EntrainementDao {
     @Query("SELECT * FROM entrainement WHERE termine_le IS NULL LIMIT 1")
     abstract suspend fun lireEnCours(): Entrainement?
 
+    /** Lecture ponctuelle de [observerEnCoursComplet] (notification du chrono). */
+    suspend fun lireEnCoursComplet(): EntrainementEnCours? = lireEnCoursCompletBrut()?.trie()
+
     @Query("SELECT * FROM etat_chrono WHERE entrainement_id = :entrainementId")
     abstract suspend fun lireChrono(entrainementId: Long): EtatChrono?
 
@@ -199,6 +202,10 @@ abstract class EntrainementDao {
     @Transaction
     @Query("SELECT * FROM entrainement WHERE termine_le IS NULL LIMIT 1")
     protected abstract fun observerEnCoursCompletBrut(): Flow<EntrainementEnCours?>
+
+    @Transaction
+    @Query("SELECT * FROM entrainement WHERE termine_le IS NULL LIMIT 1")
+    protected abstract suspend fun lireEnCoursCompletBrut(): EntrainementEnCours?
 
     @Transaction
     @Query("SELECT * FROM entrainement WHERE termine_le IS NOT NULL ORDER BY date DESC, cree_le DESC")
