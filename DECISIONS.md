@@ -63,6 +63,12 @@ Spec §6, avec ces précisions :
 - Dates en texte ISO (`2026-10-12`), horodatages en millisecondes ; poids en `REAL` (les multiples de 0,25 sont exacts en binaire).
 - Schéma exporté dans `app/schemas/` et versionné : toute modification après la première installation demande une migration.
 
+## Écrans
+
+- **« Nouvel entraînement » avec un entraînement en cours** (spec §4.1, sans maquette) : dialogue « Terminer l'entraînement en cours ? » au style de 4b. Confirmer le termine (ou le supprime s'il n'a aucune série, comme §4.3.6), puis ouvre l'écran 2.
+- **Sélecteur de date (2b)** : calendrier Material dans la fenêtre des dialogues Nocturne (voile neutre-900, rayon 24, élévation lg). Il ne descend pas sous 360 dp de large : la marge de 20 dp se réduit sur les écrans de moins de 400 dp.
+- Bandeau « en cours » de l'accueil (1c) : chrono en `MM:SS` comme partout ailleurs.
+
 ## Environnement de développement
 
 - Développement dans **WSL2** (projet personnel, séparé de l'infrastructure de l'entreprise).

@@ -2,6 +2,8 @@ package app.irontap.donnees
 
 import android.os.SystemClock
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 /** Sources de temps, remplaçables dans les tests. */
 interface Horloge {
@@ -10,6 +12,9 @@ interface Horloge {
 
     /** `SystemClock.elapsedRealtime()` : base du chrono, insensible aux changements d'heure. */
     fun realtime(): Long
+
+    /** Date du jour dans le fuseau du téléphone. */
+    fun aujourdhui(): LocalDate = maintenant().atZone(ZoneId.systemDefault()).toLocalDate()
 }
 
 object HorlogeSysteme : Horloge {

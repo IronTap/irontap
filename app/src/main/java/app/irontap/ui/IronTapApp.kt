@@ -2,21 +2,30 @@ package app.irontap.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import app.irontap.IronTapApplication
+import androidx.navigation.toRoute
+import app.irontap.donnees.Entrainement
+import app.irontap.ui.accueil.ActionsAccueil
+import app.irontap.ui.accueil.EcranAccueil
+import app.irontap.ui.entrainement.EcranFormulaireEntrainement
+import app.irontap.ui.entrainement.FormulaireEntrainementViewModel
 import app.irontap.ui.saisie.EcranSaisie
 import app.irontap.ui.theme.IronTapTheme
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import java.time.LocalDate
 
-/** Routes typées de l'application. Les autres écrans s'ajouteront ici. */
+/** Routes typées de l'application (parcours : spec §3). */
 @Serializable
 data object Accueil
+
+@Serializable
+data object NouvelEntrainement
+
+@Serializable
+data class ModifierEntrainement(val id: Long)
 
 @Serializable
 data object Saisie
@@ -27,21 +36,31 @@ fun IronTapApp(demandesSaisie: Int = 0) {
     IronTapTheme {
         val navController = rememberNavController()
         NavHost(navController = navController, startDestination = Accueil) {
-            // Provisoire : la planche du thème tient lieu d'accueil jusqu'à l'écran 1. Son bouton reprend
-            // l'entraînement en cours, ou en crée un (date du jour, sans libellé) à la place de l'écran 2.
             composable<Accueil> {
-                val conteneur = (LocalContext.current.applicationContext as IronTapApplication).container
-                val scope = rememberCoroutineScope()
-                Nuancier(
-                    onSaisie = {
-                        scope.launch {
-                            val dao = conteneur.base.entrainements()
-                            if (dao.lireEnCours() == null) {
-                                dao.creerEntrainement(LocalDate.now(), null, conteneur.horloge.maintenant())
-                            }
-                            navController.navigate(Saisie) { launchSingleTop = true }
-                        }
+                EcranAccueil(
+                    actions = object : ActionsAccueil {
+                        override fun nouvelEntrainement() = navController.navigate(NouvelEntrainement) { launchSingleTop = true }
+                        override fun reprendre() = navController.ouvrirSaisie()
+
+                        // Détail (écran 4) et export (§5) : étapes suivantes.
+                        override fun ouvrir(entrainement: Entrainement) = Unit
+                        override fun exporter() = Unit
                     },
+                )
+            }
+            composable<NouvelEntrainement> {
+                EcranFormulaireEntrainement(
+                    vm = viewModel(factory = FormulaireEntrainementViewModel.fabrique(id = null)),
+                    onLance = navController::ouvrirSaisie,
+                    onFermer = { navController.popBackStack<NouvelEntrainement>(inclusive = true) },
+                )
+            }
+            composable<ModifierEntrainement> { entree ->
+                val route = entree.toRoute<ModifierEntrainement>()
+                EcranFormulaireEntrainement(
+                    vm = viewModel(factory = FormulaireEntrainementViewModel.fabrique(route.id)),
+                    onLance = {},
+                    onFermer = { navController.popBackStack<ModifierEntrainement>(inclusive = true) },
                 )
             }
             composable<Saisie> {
@@ -50,13 +69,13 @@ fun IronTapApp(demandesSaisie: Int = 0) {
         }
         // Après le NavHost : le graphe est défini quand l'effet s'exécute.
         LaunchedEffect(demandesSaisie) {
-            if (demandesSaisie > 0) {
-                // Retour depuis la saisie : l'accueil, quel que soit l'écran d'où l'on vient (spec §3).
-                navController.navigate(Saisie) {
-                    popUpTo<Accueil>()
-                    launchSingleTop = true
-                }
-            }
+            if (demandesSaisie > 0) navController.ouvrirSaisie()
         }
     }
+}
+
+/** Saisie de l'entraînement en cours, au-dessus de l'accueil : Retour y ramène toujours (spec §3). */
+private fun NavController.ouvrirSaisie() = navigate(Saisie) {
+    popUpTo<Accueil>()
+    launchSingleTop = true
 }

@@ -19,5 +19,7 @@ class FormatsTest {
     @Test
     fun `date en francais`() {
         assertEquals("Lun. 12 oct. 2026", formaterDate(LocalDate.of(2026, 10, 12)))
+        assertEquals("Mer. 30 sept. 2026", formaterDate(LocalDate.of(2026, 9, 30)))
+        assertEquals("Mar. 13 oct.", formaterDateCourte(LocalDate.of(2026, 10, 13)))
     }
 }

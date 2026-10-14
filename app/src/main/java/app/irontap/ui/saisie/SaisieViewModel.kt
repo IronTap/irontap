@@ -61,6 +61,9 @@ sealed interface EtatSaisie {
 
         val numeroExercice = if (verrouille) exercices.size else exercices.size + 1
         val numeroSerie = if (verrouille) dernier!!.series.size + 1 else 1
+
+        /** « Tirage vertical · Série 3 » (notification, accueil) ; après « Nouvel exercice », le nom n'est pas encore connu. */
+        val ligne = "${nomVerrouille ?: "Exercice $numeroExercice"} · Série $numeroSerie"
     }
 }
 

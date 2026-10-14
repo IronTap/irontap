@@ -15,8 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -37,11 +40,32 @@ fun DialogueNocturne(
     onFermer: () -> Unit,
     contenu: @Composable ColumnScope.() -> Unit,
 ) {
+    FenetreDialogue(onFermer = onFermer, forme = Formes.Grande) {
+        Column(
+            modifier = Modifier.padding(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(titre, style = Typo.TitreDialogue, color = Couleurs.Texte)
+            contenu()
+        }
+    }
+}
+
+/**
+ * Fenêtre des dialogues : voile neutre-900 à 72 % sur tout l'écran (pas l'assombrissement noir du système),
+ * carte surface de forme [forme], élévation lg, à [marge] des bords. Un appui hors de la carte ou Retour ferme.
+ */
+@Composable
+fun FenetreDialogue(
+    onFermer: () -> Unit,
+    forme: Shape,
+    marge: Dp = 20.dp,
+    contenu: @Composable () -> Unit,
+) {
     Dialog(
         onDismissRequest = onFermer,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        // Le voile des maquettes remplace l'assombrissement de la fenêtre de dialogue.
         val fenetre = (LocalView.current.parent as? DialogWindowProvider)?.window
         SideEffect { fenetre?.setDimAmount(0f) }
         Box(
@@ -50,22 +74,18 @@ fun DialogueNocturne(
                 .background(Couleurs.Voile)
                 .pointerInput(onFermer) { detectTapGestures { onFermer() } }
                 .safeDrawingPadding()
-                .padding(20.dp),
+                .padding(marge),
             contentAlignment = Alignment.Center,
         ) {
-            Column(
-                modifier = Modifier
+            Box(
+                Modifier
                     .fillMaxWidth()
-                    .elevation(Elevation.Lg, Formes.Grande)
-                    .background(Couleurs.Surface, Formes.Grande)
+                    .elevation(Elevation.Lg, forme)
+                    .background(Couleurs.Surface, forme)
+                    .clip(forme)
                     // Un appui sur la carte elle-même ne ferme pas le dialogue.
-                    .pointerInput(Unit) { detectTapGestures { } }
-                    .padding(start = 20.dp, top = 22.dp, end = 20.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(titre, style = Typo.TitreDialogue, color = Couleurs.Texte)
-                contenu()
-            }
+                    .pointerInput(Unit) { detectTapGestures { } },
+            ) { contenu() }
         }
     }
 }

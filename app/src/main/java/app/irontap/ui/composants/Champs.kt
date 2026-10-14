@@ -2,6 +2,8 @@ package app.irontap.ui.composants
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -14,13 +16,18 @@ import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.maxLength
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.irontap.R
 import app.irontap.ui.theme.Couleurs
@@ -58,6 +65,48 @@ fun Modifier.cadreChamp(erreur: Boolean = false, focus: Boolean = false): Modifi
         },
         shape = Formes.Grande,
     )
+
+/**
+ * Champ texte d'une ligne en 22 / 500 (nom d'exercice 52 dp, libellé d'entraînement 62 dp) :
+ * placeholder neutre-600, curseur accent, bordure accent au focus.
+ */
+@Composable
+fun ChampTexte(
+    etat: TextFieldState,
+    placeholder: String,
+    hauteur: Dp,
+    longueurMax: Int,
+    modifier: Modifier = Modifier,
+    erreur: Boolean = false,
+    imeAction: ImeAction = ImeAction.Done,
+) {
+    val interactions = remember { MutableInteractionSource() }
+    val focus by interactions.collectIsFocusedAsState()
+    val filtre = remember(longueurMax) { InputTransformation.maxLength(longueurMax) }
+    BasicTextField(
+        state = etat,
+        modifier = modifier.fillMaxWidth(),
+        inputTransformation = filtre,
+        textStyle = Typo.Champ.copy(color = Couleurs.Texte),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = imeAction),
+        lineLimits = TextFieldLineLimits.SingleLine,
+        interactionSource = interactions,
+        cursorBrush = SolidColor(Couleurs.Accent),
+        decorator = { champ ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(hauteur)
+                    .cadreChamp(erreur, focus)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (etat.text.isEmpty()) Text(placeholder, style = Typo.Champ, color = Couleurs.Neutre600)
+                champ()
+            }
+        },
+    )
+}
 
 /** Champ « Poids » : 62 dp, valeur 38 sp, « kg » à droite. Chiffres et un séparateur décimal (point ou virgule). */
 @Composable

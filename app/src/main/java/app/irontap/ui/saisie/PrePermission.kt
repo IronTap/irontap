@@ -91,7 +91,7 @@ fun FeuillePrePermission(onAutoriser: () -> Unit, onPlusTard: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) { Icone(R.drawable.ic_bell, taille = 26.dp, couleur = Couleurs.Accent300) }
         Spacer(Modifier.height(16.dp))
-        Text("Garde un œil sur ton chrono", style = Typo.TitreFeuille, color = Couleurs.Texte)
+        Text("Garde un œil sur ton chrono", style = Typo.GrandTitre, color = Couleurs.Texte)
         Spacer(Modifier.height(6.dp))
         Text(
             text = "Autorise les notifications pour voir ton chrono même quand l’appli est en arrière-plan.",

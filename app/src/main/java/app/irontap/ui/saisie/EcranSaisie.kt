@@ -36,7 +36,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,10 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.irontap.R
 import app.irontap.donnees.EntrainementDao.Suite
@@ -85,11 +81,13 @@ import app.irontap.ui.composants.BoutonSecondaire
 import app.irontap.ui.composants.BoutonTexte
 import app.irontap.ui.composants.ChampPoids
 import app.irontap.ui.composants.ChampRepetitions
+import app.irontap.ui.composants.ChampTexte
 import app.irontap.ui.composants.DialogueNocturne
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.LibelleChamp
 import app.irontap.ui.composants.MessageErreur
 import app.irontap.ui.composants.RangeeAjouts
+import app.irontap.ui.composants.tempsEcouleMs
 import app.irontap.ui.composants.cadreChamp
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Elevation
@@ -97,7 +95,6 @@ import app.irontap.ui.theme.Formes
 import app.irontap.ui.theme.Typo
 import app.irontap.ui.theme.elevation
 import app.irontap.ui.theme.hauteurLigne
-import kotlinx.coroutines.delay
 
 /** Actions de l'écran, implémentées par [SaisieViewModel]. */
 interface ActionsSaisie {
@@ -189,10 +186,13 @@ fun ContenuSaisie(
                         if (etat.nomVerrouille != null) {
                             NomVerrouille(etat.nomVerrouille)
                         } else {
-                            ChampNom(
+                            ChampTexte(
                                 etat = nom,
+                                placeholder = "ex. Tirage vertical",
+                                hauteur = 52.dp,
+                                longueurMax = 60,
                                 erreur = formulaire.erreurNom,
-                                focus = focusNom,
+                                imeAction = ImeAction.Next,
                                 modifier = Modifier
                                     .onFocusChanged { focusNom = it.isFocused }
                                     .onGloballyPositioned { ancreNom = it.positionInRoot() to it.size.width },
@@ -279,26 +279,6 @@ private fun EnTete(etat: EtatSaisie.EnCours) {
 
 // --- Chrono ---
 
-/**
- * Temps écoulé du chrono, rafraîchi à chaque changement de seconde tant qu'il tourne et que l'écran
- * est visible. Au retour au premier plan (téléphone rallumé…), la valeur est recalculée aussitôt.
- */
-@Composable
-private fun ecouleMs(chrono: EtatChrono?, realtime: () -> Long): Long {
-    var maintenant by remember { mutableLongStateOf(realtime()) }
-    val cycleDeVie = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(chrono, cycleDeVie) {
-        cycleDeVie.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            maintenant = realtime()
-            while (chrono?.etat == EtatChrono.Etat.EnCours) {
-                delay(1_000 - chrono.ecouleMs(maintenant) % 1_000)
-                maintenant = realtime()
-            }
-        }
-    }
-    return chrono?.ecouleMs(maintenant) ?: 0
-}
-
 @Composable
 private fun BandeauChrono(chrono: EtatChrono?, realtime: () -> Long, actions: ActionsSaisie) {
     val etat = chrono?.etat ?: EtatChrono.Etat.Arrete
@@ -331,7 +311,7 @@ private fun BandeauChrono(chrono: EtatChrono?, realtime: () -> Long, actions: Ac
                 }
             }
             Text(
-                text = formaterChrono(ecouleMs(chrono, realtime)),
+                text = formaterChrono(tempsEcouleMs(chrono, realtime)),
                 style = Typo.Chrono,
                 color = couleurTemps,
                 maxLines = 1,
@@ -366,34 +346,6 @@ private fun BandeauChrono(chrono: EtatChrono?, realtime: () -> Long, actions: Ac
 }
 
 // --- Nom de l'exercice ---
-
-private val FiltreNom = InputTransformation.maxLength(60)
-
-@Composable
-private fun ChampNom(etat: TextFieldState, erreur: Boolean, focus: Boolean, modifier: Modifier) {
-    BasicTextField(
-        state = etat,
-        modifier = modifier.fillMaxWidth(),
-        inputTransformation = FiltreNom,
-        textStyle = Typo.Champ.copy(color = Couleurs.Texte),
-        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
-        lineLimits = TextFieldLineLimits.SingleLine,
-        cursorBrush = SolidColor(Couleurs.Accent),
-        decorator = { champ ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .cadreChamp(erreur, focus)
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                if (etat.text.isEmpty()) Text("ex. Tirage vertical", style = Typo.Champ, color = Couleurs.Neutre600)
-                champ()
-            }
-        },
-    )
-}
 
 /** Nom verrouillé après la première série : sans fond, contour pointillé, cadenas. */
 @Composable

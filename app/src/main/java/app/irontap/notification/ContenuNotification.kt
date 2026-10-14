@@ -17,10 +17,7 @@ data class ContenuNotification(val chrono: EtatChrono, val ligne: String) {
         fun de(enCours: EntrainementEnCours?): ContenuNotification? {
             val chrono = enCours?.chrono ?: return null
             if (chrono.etat == EtatChrono.Etat.Arrete) return null
-            val saisie = EtatSaisie.EnCours(enCours.entrainement, enCours.exercices, chrono)
-            // Après « Nouvel exercice », le nom n'est pas encore connu.
-            val exercice = saisie.nomVerrouille ?: "Exercice ${saisie.numeroExercice}"
-            return ContenuNotification(chrono, "$exercice · Série ${saisie.numeroSerie}")
+            return ContenuNotification(chrono, EtatSaisie.EnCours(enCours.entrainement, enCours.exercices, chrono).ligne)
         }
     }
 }

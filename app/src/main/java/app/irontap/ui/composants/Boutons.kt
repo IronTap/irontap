@@ -48,9 +48,6 @@ private val Principale = Apparence(Couleurs.Accent900, Couleurs.Accent800, Coule
 /** Action secondaire : fond surface, bordure séparateur ; appuyée : neutre-800. */
 private val Secondaire = Apparence(Couleurs.Surface, Couleurs.Neutre800, Couleurs.Separateur)
 
-/** Action secondaire sans fond (« Annuler » des formulaires) : contour séparateur seul. */
-private val Contour = Apparence(Color.Transparent, Couleurs.Neutre800, Couleurs.Separateur)
-
 /**
  * Action principale (texte accent-200). Par défaut : grand bouton de 64 dp en 18 / 500.
  * La largeur est celle du contenu : passer `Modifier.fillMaxWidth()` ou `weight(1f)` à l'appel.
@@ -89,7 +86,10 @@ fun BoutonSecondaire(
     actif: Boolean = true,
 ) = BoutonNocturne(Secondaire, texte, onClick, modifier, icone, hauteur, forme, style, couleurTexte, tailleIcone, margeHorizontale, actif)
 
-/** Action secondaire sans fond (« Annuler » des écrans 2a / 2c) : 52 dp en 16 / 500 neutre-200. */
+/**
+ * Action secondaire sans fond (« Annuler » des écrans 2a / 2c) : 52 dp en 16 / 500 neutre-200, contour séparateur.
+ * Avec [bordure] accent : « Reprendre l'entraînement » du bandeau de l'accueil (1c).
+ */
 @Composable
 fun BoutonContour(
     texte: String,
@@ -103,7 +103,9 @@ fun BoutonContour(
     tailleIcone: Dp = 18.dp,
     margeHorizontale: Dp = 16.dp,
     actif: Boolean = true,
-) = BoutonNocturne(Contour, texte, onClick, modifier, icone, hauteur, forme, style, couleurTexte, tailleIcone, margeHorizontale, actif)
+    bordure: Color = Couleurs.Separateur,
+    fondAppuye: Color = Couleurs.Neutre800,
+) = BoutonNocturne(Apparence(Color.Transparent, fondAppuye, bordure), texte, onClick, modifier, icone, hauteur, forme, style, couleurTexte, tailleIcone, margeHorizontale, actif)
 
 @Composable
 private fun BoutonNocturne(
@@ -169,6 +171,8 @@ fun BoutonRond(
     modifier: Modifier = Modifier,
     bordureAppuyee: Color = bordure,
     description: String? = null,
+    /** Désactivé : 35 % d'opacité (icône Exporter de l'accueil vide, 1b). */
+    actif: Boolean = true,
     contenu: @Composable () -> Unit,
 ) {
     val interactions = remember { MutableInteractionSource() }
@@ -176,10 +180,11 @@ fun BoutonRond(
     Box(
         modifier = modifier
             .size(taille)
+            .alpha(if (actif) 1f else 0.35f)
             .clip(CircleShape)
             .background(if (appuye) fondAppuye else fond)
             .border(1.dp, if (appuye) bordureAppuyee else bordure, CircleShape)
-            .clickable(interactions, indication = null, role = Role.Button, onClick = onClick)
+            .clickable(interactions, indication = null, enabled = actif, role = Role.Button, onClick = onClick)
             .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
         contentAlignment = Alignment.Center,
     ) { contenu() }

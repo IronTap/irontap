@@ -57,6 +57,9 @@ object Typo {
     /** Valeur des champs poids et répétitions : 38 / 500, −0,02 em, interligne naturel (champ). */
     val Valeur = style(38).copy(letterSpacing = (-0.02).em).interligneNaturel()
 
+    /** Date en tête du sélecteur de date (2b) : 28 / 500. */
+    val TitreDate = style(28)
+
     /** Titre de l'écran d'accueil : 24 / 500, −0,015 em. */
     val TitreAccueil = style(24).copy(letterSpacing = (-0.015).em)
 
@@ -66,8 +69,8 @@ object Typo {
     /** Nom d'exercice et date dans un champ : 22 / 500, interligne naturel (champ). */
     val Champ = style(22).interligneNaturel()
 
-    /** Titre de la feuille de pré-permission (écran 9) : 22 / 500. */
-    val TitreFeuille = style(22)
+    /** Grand titre : feuille de pré-permission (écran 9), accueil vide (1b) : 22 / 500. */
+    val GrandTitre = style(22)
 
     /** Titre de dialogue : 21 / 500. */
     val TitreDialogue = style(21)
