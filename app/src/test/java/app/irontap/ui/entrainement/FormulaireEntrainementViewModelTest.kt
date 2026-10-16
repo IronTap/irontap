@@ -7,6 +7,10 @@ import androidx.test.core.app.ApplicationProvider
 import app.irontap.donnees.BaseIronTap
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.Horloge
+import app.irontap.ui.ViewModelsDeTest
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.StateFlow
@@ -27,9 +31,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 
 /** Écran 2 : création et modification d'un entraînement (spec §4.2), sur une base Room en mémoire. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -37,6 +38,7 @@ import java.time.ZoneId
 @Config(sdk = [36])
 class FormulaireEntrainementViewModelTest {
 
+    private val vms = ViewModelsDeTest()
     private lateinit var base: BaseIronTap
     private lateinit var dao: EntrainementDao
 
@@ -54,13 +56,14 @@ class FormulaireEntrainementViewModelTest {
 
     @After
     fun fermer() {
+        vms.vider()
         base.close()
         Dispatchers.resetMain()
     }
 
     private fun kotlinx.coroutines.test.TestScope.formulaire(id: Long? = null): FormulaireEntrainementViewModel {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        return FormulaireEntrainementViewModel(dao, horloge, id)
+        return vms.garder(FormulaireEntrainementViewModel(dao, horloge, id))
     }
 
     private suspend fun <T> StateFlow<T>.attendre(condition: (T) -> Boolean): T =

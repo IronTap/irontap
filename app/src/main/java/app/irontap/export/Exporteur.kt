@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.content.FileProvider
 import app.irontap.logique.FormatExport
 import java.io.File
@@ -42,16 +43,32 @@ class Exporteur(context: Context) {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
-    /** Écrit l'export dans le document choisi, en remplaçant son contenu s'il existait déjà. */
+    /**
+     * Écrit l'export dans le document choisi (que le sélecteur vient de créer), en remplaçant son contenu.
+     * En cas d'échec, le document est supprimé pour ne pas laisser de fichier vide ou tronqué.
+     */
     @Throws(IOException::class)
     fun enregistrer(uri: Uri, format: FormatExport, contenu: String) {
         try {
             val flux = context.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("Document inaccessible")
             flux.use { it.write(format.fichier(contenu).toByteArray(Charsets.UTF_8)) }
+        } catch (e: IOException) {
+            supprimer(uri)
+            throw e
         } catch (e: SecurityException) {
+            supprimer(uri)
             throw IOException(e)
         } catch (e: IllegalArgumentException) {
+            supprimer(uri)
             throw IOException(e)
+        }
+    }
+
+    private fun supprimer(uri: Uri) {
+        try {
+            if (DocumentsContract.isDocumentUri(context, uri)) DocumentsContract.deleteDocument(context.contentResolver, uri)
+        } catch (e: Exception) {
+            // Au mieux : suppression impossible (fournisseur qui la refuse…) : l'erreur d'écriture reste affichée.
         }
     }
 

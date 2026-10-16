@@ -8,10 +8,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -25,6 +26,7 @@ import app.irontap.ui.theme.Typo
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.util.Locale
 
 /** Largeur minimale du `DatePicker` Material. */
 private val LargeurCalendrier = 360.dp
@@ -37,7 +39,11 @@ private val LargeurCalendrier = 360.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SelecteurDate(date: LocalDate, onChoisir: (LocalDate) -> Unit, onFermer: () -> Unit) {
-    val etat = rememberDatePickerState(initialSelectedDateMillis = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+    // En français quelle que soit la langue du téléphone, comme le reste de l'appli (mois, jours, semaine du lundi) :
+    // rememberDatePickerState ne prend pas de locale. Le jour pointé repart de [date] après une rotation.
+    val etat = remember(date) {
+        DatePickerState(locale = Locale.FRANCE, initialSelectedDateMillis = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+    }
     val choisie = etat.selectedDateMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate() }
     val couleurs = DatePickerDefaults.colors(
         containerColor = Couleurs.Surface,

@@ -7,6 +7,9 @@ import app.irontap.donnees.BaseIronTap
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.Horloge
+import app.irontap.ui.ViewModelsDeTest
+import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.StateFlow
@@ -27,8 +30,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.Instant
-import java.time.LocalDate
 
 /** Accueil (spec §4.1), sur une base Room en mémoire. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -36,6 +37,7 @@ import java.time.LocalDate
 @Config(sdk = [36])
 class AccueilViewModelTest {
 
+    private val vms = ViewModelsDeTest()
     private lateinit var base: BaseIronTap
     private lateinit var dao: EntrainementDao
 
@@ -53,13 +55,14 @@ class AccueilViewModelTest {
 
     @After
     fun fermer() {
+        vms.vider()
         base.close()
         Dispatchers.resetMain()
     }
 
     private fun TestScope.ecran(): AccueilViewModel {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        return AccueilViewModel(dao, horloge).also { vm -> backgroundScope.launch { vm.etat.collect {} } }
+        return vms.garder(AccueilViewModel(dao, horloge)).also { vm -> backgroundScope.launch { vm.etat.collect {} } }
     }
 
     /** Attend (en temps réel : Room écrit sur ses propres fils) que [condition] soit vraie. */

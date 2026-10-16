@@ -92,7 +92,8 @@ class ExportViewModel(
             }
         }
         .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EtatExport.Chargement)
+        // Feuille rouverte plus tard : on repart de Chargement plutôt que d'un contenu peut-être périmé.
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0), EtatExport.Chargement)
 
     private val _operation = MutableStateFlow(OperationExport())
     val operation: StateFlow<OperationExport> = _operation.asStateFlow()
@@ -138,23 +139,25 @@ class ExportViewModel(
             exporteur.enregistrer(uri, format, pret.contenus.getValue(format))
         } != null
 
-    /** Exécute [bloc] hors du fil principal sur l'export prêt, puis libère l'opération réservée. */
+    /**
+     * Exécute [bloc] hors du fil principal sur l'export prêt. En cas de succès, l'opération reste réservée :
+     * la feuille se referme et [reinitialiser] la libère, sans réactiver les boutons pendant l'animation.
+     */
     private suspend fun <T : Any> executer(messageEchec: String, bloc: (EtatExport.Pret, FormatExport) -> T): T? {
+        var reussi = false
         try {
             val pret = etat.first { it != EtatExport.Chargement } as? EtatExport.Pret
             if (pret == null) {
                 _operation.value = OperationExport(erreur = "Rien à exporter")
                 return null
             }
-            val resultat = withContext(Dispatchers.IO) { bloc(pret, format.value) }
-            _operation.value = OperationExport()
-            return resultat
+            return withContext(Dispatchers.IO) { bloc(pret, format.value) }.also { reussi = true }
         } catch (e: IOException) {
             _operation.value = OperationExport(erreur = messageEchec)
             return null
         } finally {
-            // Annulation (feuille fermée en cours de route) : l'opération ne reste pas bloquée.
-            _operation.update { it.copy(occupe = false) }
+            // Échec, ou annulation (feuille fermée en cours de route) : l'opération ne reste pas bloquée.
+            if (!reussi) _operation.update { it.copy(occupe = false) }
         }
     }
 

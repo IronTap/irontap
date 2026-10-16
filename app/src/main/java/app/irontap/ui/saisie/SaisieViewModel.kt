@@ -296,8 +296,12 @@ class SaisieViewModel(
         val serie = (dialogue as? DialogueFin.AvecSerie)?.serie?.takeIf { avecSerie }
         _formulaire.update { it.copy(dialogue = null) }
         ecrire {
-            if (serie != null) sauver(enCours, serie, Suite.NouvelleSerie)
-            dao.terminer(enCours.entrainement.id, horloge.maintenant())
+            val id = enCours.entrainement.id
+            if (serie != null) {
+                dao.enregistrerSerieEtTerminer(id, serie.nom, serie.poidsKg, serie.repetitions, horloge.maintenant(), horloge.realtime())
+            } else {
+                dao.terminer(id, horloge.maintenant())
+            }
             brouillon.vider()
         }
     }

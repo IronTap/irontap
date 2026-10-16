@@ -103,11 +103,17 @@ class NotificationChrono(
             .build()
     }
 
-    /** Intentions explicites et immuables : seule l'appli peut les recevoir, personne ne peut les modifier. */
+    /**
+     * Intentions explicites et immuables : seule l'appli peut les recevoir, personne ne peut les modifier.
+     * Ouvrir la saisie ramène l'activité existante au premier plan (CLEAR_TOP + SINGLE_TOP), même si une autre
+     * appli s'est ouverte par-dessus dans la même tâche (partage d'un export), au lieu d'en empiler une seconde.
+     */
     private fun ouvrirSaisie(): PendingIntent = PendingIntent.getActivity(
         context,
         0,
-        Intent(context, MainActivity::class.java).setAction(MainActivity.ACTION_OUVRIR_SAISIE),
+        Intent(context, MainActivity::class.java)
+            .setAction(MainActivity.ACTION_OUVRIR_SAISIE)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_IMMUTABLE,
     )
 

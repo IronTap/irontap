@@ -18,8 +18,13 @@ class Reglages(private val store: DataStore<Preferences>) {
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[PRE_PERMISSION_MONTREE] ?: false }
 
+    /** Stockage plein ou fichier illisible : rien n'est mémorisé, l'écran 9 sera simplement reproposé. */
     suspend fun marquerPrePermissionMontree() {
-        store.edit { it[PRE_PERMISSION_MONTREE] = true }
+        try {
+            store.edit { it[PRE_PERMISSION_MONTREE] = true }
+        } catch (e: IOException) {
+            // Cf. KDoc.
+        }
     }
 
     private companion object {

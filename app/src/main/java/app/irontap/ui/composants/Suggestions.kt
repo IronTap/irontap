@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,6 +26,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.irontap.logique.Suggestion
 import app.irontap.ui.theme.Couleurs
@@ -31,14 +35,23 @@ import app.irontap.ui.theme.Formes
 import app.irontap.ui.theme.Typo
 import app.irontap.ui.theme.elevation
 
-/** Menu d'autocomplétion : surface, élévation md, lignes de 52 dp ; la partie correspondante en 600 accent-200. */
+/**
+ * Menu d'autocomplétion : surface, élévation md, lignes de 52 dp ; la partie correspondante en 600 accent-200.
+ * Avec [hauteurMax] (liste superposée à l'écran), la liste défile au lieu de passer sous le clavier.
+ */
 @Composable
-fun ListeSuggestions(suggestions: List<Suggestion>, onChoisir: (Suggestion) -> Unit, modifier: Modifier) {
+fun ListeSuggestions(
+    suggestions: List<Suggestion>,
+    onChoisir: (Suggestion) -> Unit,
+    modifier: Modifier,
+    hauteurMax: Dp = Dp.Unspecified,
+) {
     Column(
         modifier = modifier
             .elevation(Elevation.Md, Formes.Grande)
             .background(Couleurs.Surface, Formes.Grande)
             .clip(Formes.Grande)
+            .then(if (hauteurMax != Dp.Unspecified) Modifier.heightIn(max = hauteurMax).verticalScroll(rememberScrollState()) else Modifier)
             .padding(vertical = 4.dp),
     ) {
         suggestions.forEach { suggestion ->

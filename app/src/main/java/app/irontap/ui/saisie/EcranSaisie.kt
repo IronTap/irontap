@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,8 +91,8 @@ import app.irontap.ui.composants.LibelleChamp
 import app.irontap.ui.composants.ListeSuggestions
 import app.irontap.ui.composants.MessageErreur
 import app.irontap.ui.composants.RangeeAjouts
-import app.irontap.ui.composants.tempsEcouleMs
 import app.irontap.ui.composants.cadreChamp
+import app.irontap.ui.composants.tempsEcouleMs
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Elevation
 import app.irontap.ui.theme.Formes
@@ -158,6 +161,7 @@ fun ContenuSaisie(
     val densite = LocalDensity.current
     // Position du champ nom dans l'écran : la liste de suggestions se superpose au contenu qui suit.
     var positionRacine by remember { mutableStateOf(Offset.Zero) }
+    var hauteurRacine by remember { mutableIntStateOf(0) }
     var ancreNom by remember { mutableStateOf<Pair<Offset, Int>?>(null) }
     var focusNom by remember { mutableStateOf(false) }
 
@@ -165,7 +169,10 @@ fun ContenuSaisie(
         Modifier
             .fillMaxSize()
             .background(Couleurs.Fond)
-            .onGloballyPositioned { positionRacine = it.positionInRoot() },
+            .onGloballyPositioned {
+                positionRacine = it.positionInRoot()
+                hauteurRacine = it.size.height
+            },
     ) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
             val hauteurVisible = maxHeight
@@ -224,15 +231,17 @@ fun ContenuSaisie(
         val ancre = ancreNom
         if (focusNom && ancre != null && etat.nomVerrouille == null && suggestions.isNotEmpty()) {
             val (position, largeur) = ancre
+            val decalage = position - positionRacine
+            val haut = decalage.y.toInt() + with(densite) { (52 + 6).dp.roundToPx() }
+            // La liste s'arrête au-dessus du clavier (et de la barre de navigation) et défile au-delà.
+            val bas = hauteurRacine - WindowInsets.safeDrawing.getBottom(densite) - with(densite) { 8.dp.roundToPx() }
             ListeSuggestions(
                 suggestions = suggestions,
                 onChoisir = actions::choisir,
                 modifier = Modifier
-                    .offset {
-                        val decalage = position - positionRacine
-                        IntOffset(decalage.x.toInt(), decalage.y.toInt() + (52 + 6).dp.roundToPx())
-                    }
+                    .offset { IntOffset(decalage.x.toInt(), haut) }
                     .width(with(densite) { largeur.toDp() }),
+                hauteurMax = with(densite) { (bas - haut).coerceAtLeast(60.dp.roundToPx()).toDp() },
             )
         }
 

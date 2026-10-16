@@ -140,6 +140,23 @@ abstract class EntrainementDao {
         return serie
     }
 
+    /**
+     * Dialogue 4a : enregistre la série affichée puis termine l'entraînement, dans une même transaction.
+     * Si la fin échoue, la série n'est pas enregistrée non plus : un nouvel essai ne la double pas.
+     */
+    @Transaction
+    open suspend fun enregistrerSerieEtTerminer(
+        entrainementId: Long,
+        nomExercice: String,
+        poidsKg: Double?,
+        repetitions: Int,
+        maintenant: Instant,
+        realtime: Long,
+    ) {
+        enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, Suite.NouvelleSerie, maintenant, realtime)
+        terminer(entrainementId, maintenant)
+    }
+
     /** Applique une action du chrono (Play, Pause, Relancer) à l'état enregistré. */
     @Transaction
     open suspend fun modifierChrono(entrainementId: Long, action: (EtatChrono) -> EtatChrono): EtatChrono? {

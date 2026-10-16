@@ -10,9 +10,13 @@ import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.Horloge
+import app.irontap.ui.ViewModelsDeTest
+import java.time.Instant
+import java.time.LocalDate
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -33,9 +37,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.Instant
-import java.time.LocalDate
-import java.util.concurrent.CopyOnWriteArrayList
 
 /** Règles de l'écran Saisie série (spec §4.3), sur une base Room en mémoire. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -43,6 +44,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 @Config(sdk = [36])
 class SaisieViewModelTest {
 
+    private val vms = ViewModelsDeTest()
     private lateinit var base: BaseIronTap
     private lateinit var dao: EntrainementDao
     private val brouillon = BrouillonSaisie()
@@ -62,6 +64,7 @@ class SaisieViewModelTest {
 
     @After
     fun fermer() {
+        vms.vider()
         base.close()
         Dispatchers.resetMain()
     }
@@ -72,7 +75,7 @@ class SaisieViewModelTest {
     /** ViewModel abonné comme par l'écran ; les coroutines du ViewModel s'exécutent sur le dispatcher du test. */
     private fun TestScope.ecran(): SaisieViewModel {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        return SaisieViewModel(dao, horloge, brouillon).also { vm ->
+        return vms.garder(SaisieViewModel(dao, horloge, brouillon)).also { vm ->
             backgroundScope.launch { vm.etat.collect {} }
             backgroundScope.launch { vm.suggestions.collect {} }
             backgroundScope.launch { vm.formulaire.collect { f -> f.toast?.let { if (toasts.lastOrNull() != it) toasts += it } } }

@@ -2,7 +2,9 @@ package app.irontap
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import app.irontap.donnees.BaseIronTap
 import app.irontap.donnees.Horloge
@@ -12,7 +14,11 @@ import app.irontap.export.Exporteur
 import app.irontap.notification.NotificationChrono
 import app.irontap.ui.saisie.BrouillonSaisie
 
-private val Context.preferencesStore: DataStore<Preferences> by preferencesDataStore(name = "preferences")
+/** Un fichier de préférences corrompu est remplacé par des préférences vides plutôt que de bloquer l'appli. */
+private val Context.preferencesStore: DataStore<Preferences> by preferencesDataStore(
+    name = "preferences",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * Conteneur de dépendances manuel (pas de bibliothèque d'injection).

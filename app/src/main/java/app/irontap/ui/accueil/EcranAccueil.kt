@@ -94,7 +94,9 @@ fun EcranAccueil(actions: ActionsAccueil, vm: AccueilViewModel = viewModel(facto
         Box(Modifier.fillMaxSize().background(Couleurs.Fond))
         return
     }
-    var confirmer by rememberSaveable { mutableStateOf(false) }
+    // Entraînement en cours dont la fin est proposée : le dialogue ne revient pas pour un autre entraînement
+    // (celui-ci terminé depuis la saisie, puis un nouveau lancé).
+    var confirmer by rememberSaveable { mutableStateOf<Long?>(null) }
     var exporter by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     ContenuAccueil(
@@ -104,17 +106,18 @@ fun EcranAccueil(actions: ActionsAccueil, vm: AccueilViewModel = viewModel(facto
         actions = object : ActionsAccueil by actions {
             // Un seul entraînement en cours à la fois (spec §4.1) : on propose d'abord de terminer l'autre.
             override fun nouvelEntrainement() {
-                if (pret.enCours != null) confirmer = true else actions.nouvelEntrainement()
+                val enCours = pret.enCours
+                if (enCours != null) confirmer = enCours.entrainement.id else actions.nouvelEntrainement()
             }
         },
     )
     val enCours = pret.enCours
-    if (confirmer && enCours != null) {
+    if (enCours != null && confirmer == enCours.entrainement.id) {
         DialogueTerminerEnCours(
             avecSeries = enCours.exercices.isNotEmpty(),
-            onAnnuler = { confirmer = false },
+            onAnnuler = { confirmer = null },
             onTerminer = {
-                confirmer = false
+                confirmer = null
                 scope.launch {
                     vm.terminerEnCours().join()
                     actions.nouvelEntrainement()

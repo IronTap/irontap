@@ -9,6 +9,9 @@ import app.irontap.donnees.BaseIronTap
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.Horloge
+import app.irontap.ui.ViewModelsDeTest
+import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.StateFlow
@@ -30,8 +33,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.time.Instant
-import java.time.LocalDate
 
 /** Détail d'un entraînement et édition de ses séries (spec §4.4, §4.5), sur une base Room en mémoire. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -39,6 +40,7 @@ import java.time.LocalDate
 @Config(sdk = [36])
 class DetailViewModelTest {
 
+    private val vms = ViewModelsDeTest()
     private lateinit var base: BaseIronTap
     private lateinit var dao: EntrainementDao
     private var id = 0L
@@ -66,13 +68,14 @@ class DetailViewModelTest {
 
     @After
     fun fermer() {
+        vms.vider()
         base.close()
         Dispatchers.resetMain()
     }
 
     private fun TestScope.ecran(): DetailViewModel {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        return DetailViewModel(dao, horloge, id).also { vm ->
+        return vms.garder(DetailViewModel(dao, horloge, id)).also { vm ->
             backgroundScope.launch { vm.etat.collect {} }
             backgroundScope.launch { vm.suggestions.collect {} }
         }

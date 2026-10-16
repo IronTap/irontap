@@ -13,6 +13,10 @@ import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.Horloge
 import app.irontap.export.Exporteur
 import app.irontap.logique.FormatExport
+import app.irontap.ui.ViewModelsDeTest
+import java.io.File
+import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.StateFlow
@@ -35,9 +39,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
-import java.time.Instant
-import java.time.LocalDate
 
 /** Export (spec §5) : portée, formats, partage et enregistrement, sur une base Room en mémoire. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -46,6 +47,7 @@ import java.time.LocalDate
 class ExportViewModelTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
+    private val vms = ViewModelsDeTest()
     private lateinit var base: BaseIronTap
     private lateinit var dao: EntrainementDao
     private var dos = 0L
@@ -73,13 +75,14 @@ class ExportViewModelTest {
 
     @After
     fun fermer() {
+        vms.vider()
         base.close()
         Dispatchers.resetMain()
     }
 
     private fun TestScope.export(id: Long?, etatSauve: SavedStateHandle = SavedStateHandle()): ExportViewModel {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        return ExportViewModel(dao, horloge, Exporteur(context), id, etatSauve).also { vm ->
+        return vms.garder(ExportViewModel(dao, horloge, Exporteur(context), id, etatSauve)).also { vm ->
             backgroundScope.launch { vm.etat.collect {} }
         }
     }
@@ -136,6 +139,10 @@ class ExportViewModelTest {
         assertEquals("text/plain", intention.type)
         assertTrue(intention.getStringExtra(Intent.EXTRA_TEXT)!!.startsWith("Lun. 12 oct. 2026 — Dos / biceps\n\nTirage vertical"))
         assertNull(IntentCompat.getParcelableExtra(intention, Intent.EXTRA_STREAM, Uri::class.java))
+        // Réussi : les boutons restent inactifs pendant la fermeture de la feuille, qui libère l'opération.
+        assertTrue(vm.operation.value.occupe)
+        assertNull(hors { vm.partager() })
+        vm.reinitialiser()
         assertFalse(vm.operation.value.occupe)
     }
 
@@ -174,7 +181,7 @@ class ExportViewModelTest {
                 "2026-10-12;Dos / biceps;Tirage vertical;1;2;12.5;12\r\n",
             document.readText(),
         )
-        assertEquals(OperationExport(), vm.operation.value)
+        assertEquals(OperationExport(occupe = true), vm.operation.value)
     }
 
     @Test
