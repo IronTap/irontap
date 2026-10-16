@@ -10,6 +10,8 @@ import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.Horloge
+import app.irontap.logique.HistoriqueExercice
+import app.irontap.logique.SeanceHistorique
 import app.irontap.ui.ViewModelsDeTest
 import java.time.Instant
 import java.time.LocalDate
@@ -226,5 +228,83 @@ class SaisieViewModelTest {
         val nouveau = ecran()
         nouveau.etat.attendre { it is EtatSaisie.EnCours && it.entrainement.id != id }
         assertEquals("" to "", nouveau.nom.text.toString() to nouveau.poids.text.toString())
+    }
+
+    /** Entraînement terminé le [date], avec les [series] (poids, répétitions) d'un exercice [nom]. */
+    private suspend fun passe(date: LocalDate, libelle: String?, nom: String, vararg series: Pair<Double?, Int>) {
+        val id = checkNotNull(dao.creerEntrainement(date, libelle, horloge.maintenant()))
+        series.forEach { (poids, reps) -> dao.enregistrerSerie(id, nom, poids, reps, Suite.NouvelleSerie, horloge.maintenant(), 0) }
+        dao.terminer(id, horloge.maintenant())
+    }
+
+    @Test
+    fun `bouton historique, nom d'un autre entrainement, casse et accents ignores, aussi une fois verrouille`() = runTest {
+        passe(LocalDate.of(2026, 10, 5), "Dos / biceps", "Tirage vertical", 40.0 to 15)
+        val id = creer()
+        dao.enregistrerSerie(id, "Développé couché", 50.0, 10, Suite.NouvelExercice, horloge.maintenant(), 0)
+        val vm = ecran()
+        backgroundScope.launch { vm.historiqueDisponible.collect {} }
+        vm.enCours()
+        assertFalse(vm.historiqueDisponible.value)
+
+        vm.saisir(nom = "tirage VERTICAL ")
+        vm.historiqueDisponible.attendre { it }
+        vm.saisir(nom = "Tirage")
+        assertFalse(vm.historiqueDisponible.value)
+        // Exercice présent seulement dans l'entraînement en cours.
+        vm.saisir(nom = "developpe couche")
+        assertFalse(vm.historiqueDisponible.value)
+        vm.saisir(nom = "")
+        assertFalse(vm.historiqueDisponible.value)
+
+    }
+
+    @Test
+    fun `bouton historique sur le nom verrouille, champ vide`() = runTest {
+        passe(LocalDate.of(2026, 10, 5), "Dos / biceps", "Tirage vertical", 40.0 to 15)
+        val id = creer()
+        dao.enregistrerSerie(id, "tirage vertical", 40.0, 12, Suite.NouvelleSerie, horloge.maintenant(), 0)
+        val vm = ecran()
+        backgroundScope.launch { vm.historiqueDisponible.collect {} }
+
+        // Le champ reste vide : seul le nom verrouillé peut faire apparaître le bouton.
+        assertEquals("tirage vertical", vm.enCours().nomVerrouille)
+        assertEquals("", vm.nom.text.toString())
+        vm.historiqueDisponible.attendre { it }
+    }
+
+    @Test
+    fun `popup historique, seances precedentes, sans toucher a la saisie ni au chrono`() = runTest {
+        passe(LocalDate.of(2026, 9, 24), null, "tirage vertical", 37.5 to 12, 40.0 to 10)
+        passe(LocalDate.of(2026, 10, 12), "Dos / biceps", "Tirage vertical", 40.0 to 15, 45.0 to 12)
+        val id = creer()
+        // Série de l'entraînement en cours (chrono relancé) : absente de la popup.
+        dao.enregistrerSerie(id, "Tirage vertical", 50.0, 3, Suite.NouvelExercice, horloge.maintenant(), 5_000)
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "TIRAGE vertical", poids = "45", repetitions = "10")
+        val chrono = checkNotNull(dao.lireChrono(id))
+        assertEquals(EtatChrono.Etat.EnCours, chrono.etat)
+        val suggestions = vm.suggestions.value
+
+        vm.ouvrirHistorique()
+        val historique = vm.formulaire.attendre { it.historique != null }.historique
+        assertEquals(
+            HistoriqueExercice(
+                "Tirage vertical",
+                listOf(
+                    SeanceHistorique("Dos / biceps — 12/10/2026", listOf("15 × 40 kg", "12 × 45 kg")),
+                    SeanceHistorique("24/09/2026", listOf("12 × 37,5 kg", "10 × 40 kg")),
+                ),
+            ),
+            historique,
+        )
+
+        vm.fermerHistorique()
+        assertNull(vm.formulaire.value.historique)
+        assertEquals(listOf("TIRAGE vertical", "45", "10"), listOf(vm.nom, vm.poids, vm.repetitions).map { it.text.toString() })
+        assertEquals(chrono, dao.lireChrono(id))
+        assertEquals(suggestions, vm.suggestions.value)
+        assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
     }
 }

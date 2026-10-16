@@ -31,6 +31,7 @@ ICONS = {
     'play': ('<path d="M72 39.9v176.2a8 8 0 0 0 12.2 6.8L228 132.9a8 8 0 0 0 0-13.8L84.2 33.1A8 8 0 0 0 72 39.9Z"/>', None),
     'pause': ('<rect x="56" y="40" width="52" height="176" rx="8"/><rect x="148" y="40" width="52" height="176" rx="8"/>', None),
     'arrow_counter_clockwise': ('<polyline points="24 56 24 104 72 104"/><path d="M67.6 192A88 88 0 1 0 65.8 65.8L24 104"/>', 18),
+    'clock_counter_clockwise': ('<polyline points="128 80 128 128 168 152"/><polyline points="72 104 32 104 32 64"/><path d="M67.6 192a88 88 0 1 0-1.8-126.2C54 77.7 44.3 88.6 32 104"/>', 16),
     'lock': ('<rect x="40" y="88" width="176" height="128" rx="8"/><path d="M92 88V52a36 36 0 0 1 72 0v36"/>', 16),
     'flag': ('<line x1="48" y1="224" x2="48" y2="48"/><path d="M48 168c64-56 96 56 160 0V48c-64 56-96-56-160 0"/>', 16),
     'calendar': ('<rect x="40" y="40" width="176" height="176" rx="8"/><line x1="176" y1="24" x2="176" y2="56"/><line x1="80" y1="24" x2="80" y2="56"/><line x1="40" y1="88" x2="216" y2="88"/>', 16),

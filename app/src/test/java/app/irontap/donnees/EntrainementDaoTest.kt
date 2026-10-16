@@ -225,6 +225,47 @@ class EntrainementDaoTest {
     }
 
     @Test
+    fun `historique d'un exercice, autres entrainements, casse et accents ignores, du plus recent au plus ancien`() = runTest {
+        val ancien = creer(lundi.minusDays(14), "Pecs")
+        serie(ancien, nom = "Développé couché", poids = 50.0, reps = 10)
+        serie(ancien, poids = 55.0, reps = 8)
+        dao.terminer(ancien, t0)
+        // Deux séances le même jour : la plus récemment créée (cree_le) d'abord, même saisie avant l'autre.
+        val soir = checkNotNull(dao.creerEntrainement(lundi.minusDays(7), "Soir", t0.plusSeconds(3_600)))
+        serie(soir, nom = "Développé couché", poids = 52.5, reps = 9)
+        dao.terminer(soir, t0)
+        // Exercice fait deux fois dans la séance : séries à la suite.
+        val matin = checkNotNull(dao.creerEntrainement(lundi.minusDays(7), null, t0))
+        serie(matin, nom = "developpe COUCHE", poids = null, reps = 12, suite = Suite.NouvelExercice)
+        serie(matin, nom = "Squat", suite = Suite.NouvelExercice)
+        serie(matin, nom = "Développé couché", poids = 60.0, reps = 6)
+        dao.terminer(matin, t0)
+        // Séance saisie après coup, datée avant les autres : en dernier.
+        val rattrapage = creer(lundi.minusDays(21))
+        serie(rattrapage, nom = "Développé couché", poids = 45.0, reps = 12)
+        dao.terminer(rattrapage, t0)
+        val enCours = creer()
+        serie(enCours, nom = "Développé couché", poids = 70.0, reps = 3, suite = Suite.NouvelExercice)
+        serie(enCours, nom = "Fentes")
+
+        val series = dao.lireHistoriqueExercice(enCours, " DEVELOPPE couché ")
+        assertEquals(listOf(soir, matin, matin, ancien, ancien, rattrapage), series.map { it.entrainementId })
+        assertEquals(listOf(9, 12, 6, 10, 8, 12), series.map { it.repetitions })
+        assertEquals(listOf(52.5, null, 60.0, 50.0, 55.0, 45.0), series.map { it.poidsKg })
+        assertEquals(SerieHistorique(soir, lundi.minusDays(7), "Soir", "Développé couché", 52.5, 9), series.first())
+        assertEquals("developpe COUCHE", series[1].nom)
+
+        // Exercice de l'entraînement en cours seulement, nom inconnu ou vide : rien.
+        assertTrue(dao.lireHistoriqueExercice(enCours, "Fentes").isEmpty())
+        assertTrue(dao.lireHistoriqueExercice(enCours, "Rowing").isEmpty())
+        assertTrue(dao.lireHistoriqueExercice(enCours, " ").isEmpty())
+        assertEquals(
+            setOf("Développé couché", "developpe COUCHE", "Squat"),
+            dao.observerNomsExercicesHors(enCours).first().toSet(),
+        )
+    }
+
+    @Test
     fun `lecture complete triee pour le detail et l'export`() = runTest {
         val id = creer(lundi, "Dos")
         serie(id, nom = "Tirage", reps = 15)

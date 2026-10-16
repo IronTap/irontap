@@ -1,6 +1,6 @@
 # IronTap — Décisions techniques
 
-Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel).
+Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux : `handoff_historique_exercice/` (spec v1.3, §4.3.8), dont la spec remplace la v1.2.
 
 ## Principes
 
@@ -21,7 +21,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 | Injection de dépendances | Aucune bibliothèque : conteneur manuel dans `Application` |
 | Dates | `java.time`, locale `fr` (« Lun. 12 oct. 2026 ») |
 | Police | Inter, fichiers TTF embarqués dans `res/font` (pas de polices téléchargeables, elles passent par le réseau) |
-| Icônes | Phosphor, exportées en vector drawables (19 icônes, aucune dépendance ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
+| Icônes | Phosphor, exportées en vector drawables (20 icônes, aucune dépendance ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
 | Export | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` ; texte et CSV générés à la main |
 | Build | Gradle Kotlin DSL + version catalog |
 | Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, autocomplétion sans accents) + Room en mémoire |
@@ -73,6 +73,11 @@ Spec §6, avec ces précisions :
 - **Renommer un exercice** (spec §4.4, sans maquette) : dialogue « Renommer l'exercice » avec le champ et l'autocomplétion de la saisie (liste dans le dialogue, sous le champ), Annuler / Enregistrer.
 - **Supprimer une série** (6b) : la fin du texte s'adapte. « Les séries suivantes seront renumérotées » seulement s'il y en a ; pour la seule série d'un exercice, « l'exercice sera retiré de l'entraînement ». Supprimer l'entraînement (menu ⋮) : confirmation au même style, « Cette action est définitive ».
 - **Balayage** : la zone « Supprimer » raccourcit la ligne (comme la maquette 6b) au lieu de la pousser hors de l'écran ; la ligne reste ouverte derrière le dialogue et se referme si on annule.
+- **Historique de l'exercice** (3f, 3g, spec §4.3.8) :
+  - noms comparés avec la normalisation de l'autocomplétion (espaces de bord, casse, accents), calculée en Kotlin : SQLite ne sait pas retirer les accents. Pas de colonne `nom_normalise`, donc pas de migration ;
+  - le bouton suit en direct les noms des autres entraînements (une requête observée par entraînement, la comparaison se fait en mémoire : pas de debounce) ;
+  - la popup est lue une fois, à l'ouverture : les autres entraînements ne changent pas pendant la saisie. Titre : le nom tel qu'enregistré dans la séance la plus récente ;
+  - deux séances le même jour : la plus récemment créée d'abord. Échec de lecture : toast d'erreur, la saisie continue.
 - Feuilles du bas sans ombre lg : avec la feuille Material, l'ombre serait dessinée en haut de l'écran ; le voile suffit.
 
 ## Export

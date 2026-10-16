@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import app.irontap.logique.normaliserNom
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.Instant
@@ -56,6 +57,23 @@ abstract class EntrainementDao {
         """,
     )
     abstract fun observerNomsExercices(): Flow<List<String>>
+
+    /** Noms d'exercices des autres entraînements que [entrainementId] (visibilité du bouton Historique, spec §4.3.8). */
+    @Query("SELECT DISTINCT nom FROM exercice WHERE entrainement_id != :entrainementId")
+    abstract fun observerNomsExercicesHors(entrainementId: Long): Flow<List<String>>
+
+    /**
+     * Séries de l'exercice [nom] (casse, accents et espaces de bord ignorés) dans les autres entraînements que
+     * [entrainementId] : de la séance la plus récente à la plus ancienne, puis exercices et séries dans l'ordre.
+     */
+    @Transaction
+    open suspend fun lireHistoriqueExercice(entrainementId: Long, nom: String): List<SerieHistorique> {
+        val cle = normaliserNom(nom)
+        if (cle.isEmpty()) return emptyList()
+        // SQLite ne sait pas retirer les accents : on retient ici les graphies enregistrées qui correspondent.
+        val noms = lireNomsExercicesHors(entrainementId).filter { normaliserNom(it) == cle }
+        return if (noms.isEmpty()) emptyList() else lireSeriesHistorique(entrainementId, noms)
+    }
 
     suspend fun lireComplet(id: Long): EntrainementComplet? = lireCompletBrut(id)?.trie()
 
@@ -243,6 +261,19 @@ abstract class EntrainementDao {
 
     @Query("SELECT * FROM exercice WHERE entrainement_id = :entrainementId ORDER BY ordre DESC LIMIT 1")
     protected abstract suspend fun lireDernierExercice(entrainementId: Long): Exercice?
+
+    @Query("SELECT DISTINCT nom FROM exercice WHERE entrainement_id != :entrainementId")
+    protected abstract suspend fun lireNomsExercicesHors(entrainementId: Long): List<String>
+
+    @Query(
+        """
+        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.poids_kg, s.repetitions
+        FROM serie s JOIN exercice x ON x.id = s.exercice_id JOIN entrainement t ON t.id = x.entrainement_id
+        WHERE x.nom IN (:noms) AND t.id != :entrainementId
+        ORDER BY t.date DESC, t.cree_le DESC, t.id DESC, x.ordre, s.ordre
+        """,
+    )
+    protected abstract suspend fun lireSeriesHistorique(entrainementId: Long, noms: List<String>): List<SerieHistorique>
 
     @Query("SELECT * FROM serie WHERE id = :id")
     protected abstract suspend fun lireSerie(id: Long): Serie?

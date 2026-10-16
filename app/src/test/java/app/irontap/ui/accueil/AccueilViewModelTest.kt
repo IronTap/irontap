@@ -98,9 +98,9 @@ class AccueilViewModelTest {
         vm.terminerEnCours().join()
 
         assertNull(dao.lireEnCours())
-        // Les deux requêtes émettent chacune leur tour : on attend l'état final.
-        val etat = vm.etat.attendre { it is EtatAccueil.Pret && it.historique.isNotEmpty() } as EtatAccueil.Pret
-        assertNull(etat.enCours)
+        // Les deux requêtes émettent chacune leur tour (l'historique peut arriver avant la fin de l'« en cours ») :
+        // on attend l'état final.
+        val etat = vm.etat.attendre { it is EtatAccueil.Pret && it.historique.isNotEmpty() && it.enCours == null } as EtatAccueil.Pret
         assertEquals(listOf(id), etat.historique.map { it.id })
     }
 }

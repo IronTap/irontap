@@ -27,6 +27,12 @@ fun suggerer(saisie: String, noms: List<String>, max: Int = 4): List<Suggestion>
     return suggestions
 }
 
+/**
+ * Clé de comparaison d'un nom d'exercice : sans espaces de bord, en minuscules, sans accents
+ * (« Développé couché » et « developpe COUCHE » ont la même clé, spec §4.3.8).
+ */
+fun normaliserNom(nom: String): String = normaliser(nom.trim()).texte
+
 /** Texte en minuscules sans accents ; [origine] donne, pour chaque caractère, sa position dans le texte d'origine. */
 private class TexteNormalise(val texte: String, val origine: IntArray)
 

@@ -140,6 +140,16 @@ data class EntrainementEnCours(
     val chrono: EtatChrono?,
 )
 
+/** Une série passée d'un exercice, avec sa séance (historique de l'exercice, spec §4.3.8). */
+data class SerieHistorique(
+    @ColumnInfo(name = "entrainement_id") val entrainementId: Long,
+    val date: LocalDate,
+    val libelle: String?,
+    val nom: String,
+    @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
+    val repetitions: Int,
+)
+
 /** Room ne garantit pas l'ordre des relations : on trie après lecture. */
 internal fun ExerciceAvecSeries.trie() = copy(series = series.sortedBy { it.ordre })
 

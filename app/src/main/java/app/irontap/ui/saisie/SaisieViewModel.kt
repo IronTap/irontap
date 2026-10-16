@@ -18,21 +18,28 @@ import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.Horloge
 import app.irontap.donnees.Serie
+import app.irontap.logique.HistoriqueExercice
 import app.irontap.logique.Suggestion
 import app.irontap.logique.ajouterPoids
 import app.irontap.logique.ajouterRepetitions
 import app.irontap.logique.decrireSerie
+import app.irontap.logique.historiqueExercice
 import app.irontap.logique.lirePoids
 import app.irontap.logique.lireRepetitions
+import app.irontap.logique.normaliserNom
 import app.irontap.logique.suggerer
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -91,6 +98,8 @@ data class Formulaire(
     val toastErreur: Boolean = false,
     /** Dernière suggestion choisie : la liste reste fermée tant que le nom n'est pas retouché. */
     val nomChoisi: String? = null,
+    /** Popup « Historique de l'exercice » ouverte (3g, spec §4.3.8). */
+    val historique: HistoriqueExercice? = null,
 )
 
 /**
@@ -151,6 +160,30 @@ class SaisieViewModel(
         if (saisie == choisi) emptyList() else suggerer(saisie, noms)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Clés des noms d'exercices des autres entraînements (cf. [normaliserNom]). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val nomsAutresEntrainements: Flow<Set<String>> = etat
+        .map { (it as? EtatSaisie.EnCours)?.entrainement?.id }
+        .distinctUntilChanged()
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptySet()) else dao.observerNomsExercicesHors(id).map { noms -> noms.mapTo(HashSet(), ::normaliserNom) }
+        }
+
+    /**
+     * Bouton « Historique » (3f, spec §4.3.8) : le nom, verrouillé ou saisi, correspond à un exercice d'un autre
+     * entraînement. Masqué si le champ est vide ou en erreur.
+     */
+    val historiqueDisponible: StateFlow<Boolean> = combine(
+        etat,
+        texteNom,
+        _formulaire.map { it.erreurNom }.distinctUntilChanged(),
+        nomsAutresEntrainements,
+    ) { etat, saisie, erreurNom, noms ->
+        val enCours = etat as? EtatSaisie.EnCours
+        val nom = enCours?.nomVerrouille ?: saisie.takeUnless { enCours == null || erreurNom }
+        nom != null && normaliserNom(nom).let { it.isNotEmpty() && it in noms }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     /** `elapsedRealtime` courant, pour l'affichage du chrono. */
     fun realtime(): Long = horloge.realtime()
 
@@ -161,6 +194,9 @@ class SaisieViewModel(
     private var enregistrement: Job? = null
 
     private var toastJob: Job? = null
+
+    /** Lecture de l'historique en cours : un double appui n'ouvre pas deux fois la popup. */
+    private var lectureHistorique: Job? = null
 
     init {
         // Une erreur disparaît dès que le champ fautif est modifié (spec §4.3.5).
@@ -265,6 +301,26 @@ class SaisieViewModel(
             _formulaire.update { it.copy(toast = null) }
         }
     }
+
+    // --- Historique de l'exercice ---
+
+    /** Ouvre la popup 3g sur l'exercice verrouillé, ou sur le nom saisi. Lecture seule : la saisie n'est pas touchée. */
+    override fun ouvrirHistorique() {
+        val enCours = etat.value as? EtatSaisie.EnCours ?: return
+        if (lectureHistorique?.isActive == true || _formulaire.value.historique != null) return
+        val nomExercice = enCours.nomVerrouille ?: nom.text.toString()
+        lectureHistorique = viewModelScope.launch {
+            val historique = try {
+                historiqueExercice(dao.lireHistoriqueExercice(enCours.entrainement.id, nomExercice))
+            } catch (e: SQLiteException) {
+                afficherToast("Historique indisponible : stockage illisible", erreur = true)
+                return@launch
+            }
+            _formulaire.update { it.copy(historique = historique) }
+        }
+    }
+
+    override fun fermerHistorique() = _formulaire.update { it.copy(historique = null) }
 
     // --- Fin de l'entraînement ---
 

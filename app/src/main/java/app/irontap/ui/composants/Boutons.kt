@@ -158,8 +158,8 @@ fun EtiquetteLibelle(libelle: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * Bouton rond (Play/Pause et Relancer du chrono, +X des champs). Le retour visuel est le changement
- * de fond et de contour à l'appui, comme dans les maquettes.
+ * Bouton rond (Play/Pause et Relancer du chrono, +X des champs), ou de [forme] donnée (bouton Historique, carré
+ * à coins arrondis). Le retour visuel est le changement de fond et de contour à l'appui, comme dans les maquettes.
  */
 @Composable
 fun BoutonRond(
@@ -170,6 +170,7 @@ fun BoutonRond(
     bordure: Color,
     modifier: Modifier = Modifier,
     bordureAppuyee: Color = bordure,
+    forme: Shape = CircleShape,
     description: String? = null,
     /** Désactivé : 35 % d'opacité (icône Exporter de l'accueil vide, 1b). */
     actif: Boolean = true,
@@ -181,9 +182,9 @@ fun BoutonRond(
         modifier = modifier
             .size(taille)
             .alpha(if (actif) 1f else 0.35f)
-            .clip(CircleShape)
+            .clip(forme)
             .background(if (appuye) fondAppuye else fond)
-            .border(1.dp, if (appuye) bordureAppuyee else bordure, CircleShape)
+            .border(1.dp, if (appuye) bordureAppuyee else bordure, forme)
             .clickable(interactions, indication = null, enabled = actif, role = Role.Button, onClick = onClick)
             .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
         contentAlignment = Alignment.Center,

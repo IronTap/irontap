@@ -12,6 +12,8 @@ fun formaterChrono(ecouleMs: Long): String {
 
 private val FormatDate = DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.FRENCH)
 
+private val FormatDateNumerique = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.FRENCH)
+
 private val FormatDateCourte = DateTimeFormatter.ofPattern("EEE d MMM", Locale.FRENCH)
 
 /** « Lun. 12 oct. 2026 ». */
@@ -21,3 +23,6 @@ fun formaterDate(date: LocalDate): String =
 /** « Lun. 12 oct. », sans l'année (bandeau « en cours » de l'accueil). */
 fun formaterDateCourte(date: LocalDate): String =
     FormatDateCourte.format(date).replaceFirstChar { it.titlecase(Locale.FRENCH) }
+
+/** « 12/10/2026 » (historique de l'exercice, 3g). */
+fun formaterDateNumerique(date: LocalDate): String = FormatDateNumerique.format(date)

@@ -38,5 +38,9 @@ fun formaterPoids(kg: Double): String =
 fun decrireSerie(poidsKg: Double?, repetitions: Int): String =
     (if (poidsKg != null) "${formaterPoids(poidsKg)} kg" else "PDC") + " × $repetitions"
 
+/** « 15 × 40 kg », ou « 12 × PDC » au poids du corps : répétitions en tête (historique de l'exercice, 3g). */
+fun decrireSerieHistorique(poidsKg: Double?, repetitions: Int): String =
+    "$repetitions × " + if (poidsKg != null) "${formaterPoids(poidsKg)} kg" else "PDC"
+
 private fun nombre(texte: String): Double? =
     texte.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }

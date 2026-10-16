@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -59,7 +62,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +78,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.irontap.R
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
+import app.irontap.logique.HistoriqueExercice
+import app.irontap.logique.SeanceHistorique
 import app.irontap.logique.Suggestion
 import app.irontap.logique.formaterChrono
 import app.irontap.logique.formaterDate
@@ -86,6 +92,7 @@ import app.irontap.ui.composants.ChampPoids
 import app.irontap.ui.composants.ChampRepetitions
 import app.irontap.ui.composants.ChampTexte
 import app.irontap.ui.composants.DialogueNocturne
+import app.irontap.ui.composants.FenetreDialogue
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.LibelleChamp
 import app.irontap.ui.composants.ListeSuggestions
@@ -111,6 +118,8 @@ interface ActionsSaisie {
     fun demanderFin()
     fun annulerFin()
     fun terminer(avecSerie: Boolean)
+    fun ouvrirHistorique()
+    fun fermerHistorique()
 }
 
 private val AjoutsPoids = listOf(1, 5, 10, 20)
@@ -125,12 +134,14 @@ fun EcranSaisie(onQuitter: () -> Unit, vm: SaisieViewModel = viewModel(factory =
     val etat by vm.etat.collectAsStateWithLifecycle()
     val formulaire by vm.formulaire.collectAsStateWithLifecycle()
     val suggestions by vm.suggestions.collectAsStateWithLifecycle()
+    val historiqueDisponible by vm.historiqueDisponible.collectAsStateWithLifecycle()
     when (val e = etat) {
         is EtatSaisie.EnCours -> {
             ContenuSaisie(
                 etat = e,
                 formulaire = formulaire,
                 suggestions = suggestions,
+                historiqueDisponible = historiqueDisponible,
                 nom = vm.nom,
                 poids = vm.poids,
                 repetitions = vm.repetitions,
@@ -151,6 +162,7 @@ fun ContenuSaisie(
     etat: EtatSaisie.EnCours,
     formulaire: Formulaire,
     suggestions: List<Suggestion>,
+    historiqueDisponible: Boolean,
     nom: TextFieldState,
     poids: TextFieldState,
     repetitions: TextFieldState,
@@ -191,23 +203,28 @@ fun ContenuSaisie(
                         BandeauChrono(etat.chrono, realtime, actions)
                         Spacer(Modifier.height(14.dp))
                         LibelleChamp("Nom de l’exercice")
-                        if (etat.nomVerrouille != null) {
-                            NomVerrouille(etat.nomVerrouille)
-                        } else {
-                            ChampTexte(
-                                etat = nom,
-                                placeholder = "ex. Tirage vertical",
-                                hauteur = 52.dp,
-                                longueurMax = 60,
-                                erreur = formulaire.erreurNom,
-                                imeAction = ImeAction.Next,
-                                modifier = Modifier
-                                    .onFocusChanged { focusNom = it.isFocused }
-                                    .onGloballyPositioned { ancreNom = it.positionInRoot() to it.size.width },
-                            )
-                            if (formulaire.erreurNom) {
-                                MessageErreur("Indique le nom de l’exercice", Modifier.padding(top = 5.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                if (etat.nomVerrouille != null) {
+                                    NomVerrouille(etat.nomVerrouille)
+                                } else {
+                                    ChampTexte(
+                                        etat = nom,
+                                        placeholder = "ex. Tirage vertical",
+                                        hauteur = 52.dp,
+                                        longueurMax = 60,
+                                        erreur = formulaire.erreurNom,
+                                        imeAction = ImeAction.Next,
+                                        modifier = Modifier
+                                            .onFocusChanged { focusNom = it.isFocused }
+                                            .onGloballyPositioned { ancreNom = it.positionInRoot() to it.size.width },
+                                    )
+                                    if (formulaire.erreurNom) {
+                                        MessageErreur("Indique le nom de l’exercice", Modifier.padding(top = 5.dp))
+                                    }
+                                }
                             }
+                            if (historiqueDisponible) BoutonHistorique(actions::ouvrirHistorique)
                         }
                         Spacer(Modifier.height(14.dp))
                         LibelleChamp("Poids")
@@ -260,6 +277,7 @@ fun ContenuSaisie(
         is DialogueFin.AvecSerie -> DialogueFinAvecSerie(dialogue.serie.description, actions)
         DialogueFin.Simple -> DialogueFinSimple(actions)
     }
+    formulaire.historique?.let { DialogueHistorique(it, actions::fermerHistorique) }
 }
 
 /** En-tête de 52 dp : libellé (ou date) au-dessus de « Exercice N · Série M ». */
@@ -379,6 +397,21 @@ private fun NomVerrouille(nom: String) {
         )
         Icone(R.drawable.ic_lock, taille = 18.dp, couleur = Couleurs.Neutre500, description = "Verrouillé")
     }
+}
+
+/** 3f : carré de 52 dp accolé au nom, horloge accent-300 ; appuyé : fond accent-800 et contour accent. */
+@Composable
+private fun BoutonHistorique(onClick: () -> Unit) {
+    BoutonRond(
+        onClick = onClick,
+        taille = 52.dp,
+        fond = Couleurs.Surface,
+        fondAppuye = Couleurs.Accent800,
+        bordure = Couleurs.Separateur,
+        bordureAppuyee = Couleurs.Accent,
+        forme = Formes.Grande,
+        description = "Historique de l’exercice",
+    ) { Icone(R.drawable.ic_clock_counter_clockwise, couleur = Couleurs.Accent300) }
 }
 
 /** Contour pointillé de 1 dp, rayon 14 (équivalent de `border: 1px dashed`). */
@@ -516,5 +549,69 @@ private fun DialogueFinSimple(actions: ActionsSaisie) {
                 margeHorizontale = 22.dp,
             )
         }
+    }
+}
+
+// --- Historique de l'exercice ---
+
+/**
+ * 3g : séances précédentes de l'exercice, la plus récente en premier. En-tête fixe (nom et ✕), corps défilant,
+ * 640 dp au plus. Fermeture par ✕, appui à l'extérieur ou Retour.
+ */
+@Composable
+private fun DialogueHistorique(historique: HistoriqueExercice, onFermer: () -> Unit) {
+    FenetreDialogue(onFermer = onFermer, forme = Formes.Grande) {
+        Column(Modifier.heightIn(max = 640.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, top = 10.dp, end = 6.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = historique.nom,
+                    style = Typo.TitreDialogue,
+                    color = Couleurs.Texte,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { heading() },
+                )
+                BoutonRond(
+                    onClick = onFermer,
+                    taille = 48.dp,
+                    fond = Color.Transparent,
+                    fondAppuye = Couleurs.Neutre800,
+                    bordure = Color.Transparent,
+                    description = "Fermer",
+                ) { Icone(R.drawable.ic_x, couleur = Couleurs.Neutre300) }
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = false),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            ) {
+                items(historique.seances) { SectionSeance(it) }
+            }
+        }
+    }
+}
+
+/** Une séance : filet en haut, « Libellé — JJ/MM/AAAA » en 13 / 500 neutre-400, puis une ligne 19 / 500 par série. */
+@Composable
+private fun SectionSeance(seance: SeanceHistorique) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                val trait = 1.dp.toPx()
+                drawLine(Couleurs.Separateur, Offset(0f, trait / 2), Offset(size.width, trait / 2), trait)
+            }
+            .padding(top = 14.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(seance.entete, style = Typo.EnteteSeance, color = Couleurs.Neutre400)
+        seance.series.forEach { Text(it, style = Typo.TitreDetail, color = Couleurs.Texte) }
     }
 }

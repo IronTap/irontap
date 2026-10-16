@@ -123,6 +123,9 @@ object Typo {
     /** Libellé de champ, message d'erreur : 13 / 400 (couleur neutre-300). */
     val Libelle = style(13, FontWeight.Normal)
 
+    /** En-tête de séance dans l'historique de l'exercice (3g) : 13 / 500. */
+    val EnteteSeance = style(13)
+
     /** Petit texte (libellé au-dessus de l'en-tête de saisie) : 12 / 400. */
     val Petit = style(12, FontWeight.Normal)
 
