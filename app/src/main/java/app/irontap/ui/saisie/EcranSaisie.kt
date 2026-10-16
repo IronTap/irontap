@@ -97,6 +97,7 @@ import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.LibelleChamp
 import app.irontap.ui.composants.ListeSuggestions
 import app.irontap.ui.composants.MessageErreur
+import app.irontap.ui.composants.PaliersEmpiles
 import app.irontap.ui.composants.RangeeAjouts
 import app.irontap.ui.composants.cadreChamp
 import app.irontap.ui.composants.tempsEcouleMs
@@ -115,6 +116,7 @@ interface ActionsSaisie {
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
     fun enregistrer(suite: Suite)
+    fun degressive()
     fun demanderFin()
     fun annulerFin()
     fun terminer(avecSerie: Boolean)
@@ -280,7 +282,10 @@ fun ContenuSaisie(
     formulaire.historique?.let { DialogueHistorique(it, actions::fermerHistorique) }
 }
 
-/** En-tête de 52 dp : libellé (ou date) au-dessus de « Exercice N · Série M ». */
+/**
+ * En-tête de 52 dp : libellé (ou date) au-dessus de « Exercice N · Série M ». En dégressive (3·D A2, A3) :
+ * paliers déjà gardés en accent-300 (« 50 kg × 10 ↓ … »), puis badge « ↓ dégressive » après le numéro.
+ */
 @Composable
 private fun EnTete(etat: EtatSaisie.EnCours) {
     Column(
@@ -290,18 +295,37 @@ private fun EnTete(etat: EtatSaisie.EnCours) {
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
     ) {
+        val chaine = etat.chaineDegressive
         Text(
-            text = etat.entrainement.libelle ?: formaterDate(etat.entrainement.date),
+            text = chaine ?: etat.entrainement.libelle ?: formaterDate(etat.entrainement.date),
             style = Typo.Petit,
-            color = Couleurs.Neutre400,
+            color = if (chaine != null) Couleurs.Accent300 else Couleurs.Neutre400,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            text = "Exercice ${etat.numeroExercice} · Série ${etat.numeroSerie}",
-            style = Typo.EnteteSaisie,
-            color = Couleurs.Neutre200,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Exercice ${etat.numeroExercice} · Série ${etat.numeroSerie}",
+                style = Typo.EnteteSaisie,
+                color = Couleurs.Neutre200,
+            )
+            if (chaine != null) BadgeDegressive()
+        }
+    }
+}
+
+/** Badge « ↓ dégressive » : fond accent-800, texte accent-100 11 sp, rayon 4, padding 1/7/1/5. */
+@Composable
+private fun BadgeDegressive() {
+    Row(
+        modifier = Modifier
+            .background(Couleurs.Accent800, Formes.Petite)
+            .padding(start = 5.dp, top = 1.dp, end = 7.dp, bottom = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icone(R.drawable.ic_arrow_down_small, taille = 11.dp, couleur = Couleurs.Accent100)
+        Text("dégressive", style = Typo.Badge, color = Couleurs.Accent100)
     }
 }
 
@@ -429,23 +453,39 @@ private fun Modifier.contourPointille(couleur: Color) = drawBehind {
 
 // --- Actions, toast, dialogues ---
 
+/** Grandes actions sur 3 colonnes (3·D A1) : « Nouvelle série », « Dégressive » au centre, « Nouvel exercice ». */
 @Composable
 private fun Actions(actions: ActionsSaisie, modifier: Modifier) {
     Column(modifier) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BoutonPrincipal(
                 texte = "Nouvelle\nsérie",
                 onClick = { actions.enregistrer(Suite.NouvelleSerie) },
                 modifier = Modifier.weight(1f),
                 hauteur = 72.dp,
+                style = Typo.GrandeActionCompacte,
+                margeHorizontale = 6.dp,
+            )
+            BoutonSecondaire(
+                texte = "Dégressive",
+                onClick = actions::degressive,
+                modifier = Modifier.weight(1f),
+                icone = R.drawable.ic_arrow_down,
+                hauteur = 72.dp,
+                style = Typo.GrandeActionCompacte,
+                couleurTexte = Couleurs.Texte,
+                margeHorizontale = 6.dp,
+                iconeAuDessus = true,
+                couleurIcone = Couleurs.Accent300,
             )
             BoutonSecondaire(
                 texte = "Nouvel\nexercice",
                 onClick = { actions.enregistrer(Suite.NouvelExercice) },
                 modifier = Modifier.weight(1f),
                 hauteur = 72.dp,
-                style = Typo.GrandeAction,
+                style = Typo.GrandeActionCompacte,
                 couleurTexte = Couleurs.Texte,
+                margeHorizontale = 6.dp,
             )
         }
         BoutonTexte(
@@ -598,7 +638,10 @@ private fun DialogueHistorique(historique: HistoriqueExercice, onFermer: () -> U
     }
 }
 
-/** Une séance : filet en haut, « Libellé — JJ/MM/AAAA » en 13 / 500 neutre-400, puis une ligne 19 / 500 par série. */
+/**
+ * Une séance : filet en haut, « Libellé — JJ/MM/AAAA » en 13 / 500 neutre-400, puis une ligne 19 / 500 par série,
+ * paliers dégressifs empilés dessous.
+ */
 @Composable
 private fun SectionSeance(seance: SeanceHistorique) {
     Column(
@@ -612,6 +655,6 @@ private fun SectionSeance(seance: SeanceHistorique) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(seance.entete, style = Typo.EnteteSeance, color = Couleurs.Neutre400)
-        seance.series.forEach { Text(it, style = Typo.TitreDetail, color = Couleurs.Texte) }
+        seance.series.forEach { PaliersEmpiles(it.principal, it.degressifs, Typo.TitreDetail, retrait = 2.dp) }
     }
 }

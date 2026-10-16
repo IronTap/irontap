@@ -1,6 +1,6 @@
 # IronTap — Décisions techniques
 
-Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux : `handoff_historique_exercice/` (spec v1.3, §4.3.8), dont la spec remplace la v1.2.
+Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives).
 
 ## Principes
 
@@ -21,7 +21,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 | Injection de dépendances | Aucune bibliothèque : conteneur manuel dans `Application` |
 | Dates | `java.time`, locale `fr` (« Lun. 12 oct. 2026 ») |
 | Police | Inter, fichiers TTF embarqués dans `res/font` (pas de polices téléchargeables, elles passent par le réseau) |
-| Icônes | Phosphor, exportées en vector drawables (20 icônes, aucune dépendance ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
+| Icônes | Phosphor, exportées en vector drawables (22 icônes, aucune dépendance ; flèche des dégressives en deux épaisseurs comme les maquettes ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
 | Export | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` ; texte et CSV générés à la main |
 | Build | Gradle Kotlin DSL + version catalog |
 | Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, autocomplétion sans accents) + Room en mémoire |
@@ -62,6 +62,8 @@ Spec §6, avec ces précisions :
 - `EtatChrono` est supprimé à la fin de l'entraînement ; suppressions en cascade (entraînement → exercices → séries, chrono).
 - Dates en texte ISO (`2026-10-12`), horodatages en millisecondes ; poids en `REAL` (les multiples de 0,25 sont exacts en binaire).
 - Schéma exporté dans `app/schemas/` et versionné : toute modification après la première installation demande une migration.
+- **v2 (séries dégressives, spec v1.4)** : poids et répétitions passent de `Serie` à la table `Palier` (1 = palier principal). Migration manuelle `Migration1Vers2` : chaque série existante reçoit son palier 1, puis `serie` est recréée sans ces colonnes (SQLite d'Android 8 ne sait pas en supprimer). Les clés étrangères restant actives pendant la migration, les valeurs transitent par une table temporaire : supprimer l'ancienne `serie` effacerait sinon en cascade les paliers déjà créés. Test : une base v1 créée depuis `schemas/…/1.json`, ouverte par Room, qui valide le schéma v2.
+- **`PalierEnCours`** (ajout) : les paliers gardés par « Dégressive » sont en base, pas dans le brouillon en mémoire, pour être retrouvés si l'appli est tuée (critère du handoff). La série elle-même n'est créée qu'à « Nouvelle série » / « Nouvel exercice », avec tous ses paliers : numérotation, notification et accueil ne voient jamais de série incomplète.
 
 ## Écrans
 
@@ -78,13 +80,19 @@ Spec §6, avec ces précisions :
   - le bouton suit en direct les noms des autres entraînements (une requête observée par entraînement, la comparaison se fait en mémoire : pas de debounce) ;
   - la popup est lue une fois, à l'ouverture : les autres entraînements ne changent pas pendant la saisie. Titre : le nom tel qu'enregistré dans la séance la plus récente ;
   - deux séances le même jour : la plus récemment créée d'abord. Échec de lecture : toast d'erreur, la saisie continue.
+- **Séries dégressives** (3·D, spec §4.3.9) :
+  - « Dégressive » sur le premier palier d'un nouvel exercice crée l'exercice tout de suite (sans série) : c'est ce qui verrouille le nom, et il survit à un kill. La fin de l'entraînement supprime les paliers gardés et un tel exercice resté sans série ; un entraînement réduit à cela est supprimé comme un entraînement vide.
+  - Pas de toast sur « Dégressive » (maquette) : l'en-tête montre déjà les paliers gardés. Le toast de « Nouvelle série » décrit les paliers lus en base.
+  - Dialogue 4a : avec des paliers gardés, il propose la série même si les champs sont vides ; le palier courant s'y ajoute s'il est valide.
+  - « Terminer l'entraînement en cours ? » depuis l'accueil abandonne une dégressive en attente, comme les champs non enregistrés.
+- **Édition d'une dégressive** (7·D, spec §4.5.1) : une fois en tableau (dégressive, ou « + Ajouter un palier » depuis l'écran 7), la feuille y reste jusqu'à sa fermeture, même si tous les paliers dégressifs sont retirés : pas de changement de mise en page sous le doigt. L'écran 7 garde son libellé « Supprimer » ; le tableau dit « Supprimer la série ». Erreur de répétitions : bordure sur chaque champ fautif et message sous le tableau ; une ligne sans aucune valeur est ignorée, et si toutes sont vides c'est la première qui est signalée.
 - Feuilles du bas sans ombre lg : avec la feuille Material, l'ombre serait dessinée en haut de l'écran ; le voile suffit.
 
 ## Export
 
 - **Portée** : depuis l'accueil, les entraînements terminés (l'entraînement en cours n'est pas exporté), dans l'ordre de l'accueil, du plus récent au plus ancien ; depuis le menu ⋮ du détail, cet entraînement seul. Le contenu suit la base tant que la feuille est ouverte.
 - **Texte** : format de la spec §5 ; « PDC × 12 » au poids du corps, comme dans l'appli ; une ligne vide entre les exercices, deux entre les entraînements.
-- **CSV** : colonnes de la spec, séparateur `;`, point décimal, poids vide au poids du corps, lignes en CRLF (RFC 4180). Un libellé ou un nom contenant `;`, `"` ou un saut de ligne est mis entre guillemets. Un champ commençant par `=`, `+`, `-`, `@`, tabulation ou retour chariot est préfixé d'une apostrophe (injection de formules, recommandation OWASP). Le fichier commence par une marque d'ordre d'octets UTF-8, pour qu'Excel affiche les accents.
+- **CSV** : colonnes de la spec (dont `palier`, une ligne par palier), séparateur `;`, point décimal, poids vide au poids du corps, lignes en CRLF (RFC 4180). Un libellé ou un nom contenant `;`, `"` ou un saut de ligne est mis entre guillemets. Un champ commençant par `=`, `+`, `-`, `@`, tabulation ou retour chariot est préfixé d'une apostrophe (injection de formules, recommandation OWASP). Le fichier commence par une marque d'ordre d'octets UTF-8, pour qu'Excel affiche les accents.
 - **Partager…** : un texte de moins de 50 000 caractères part tel quel (`EXTRA_TEXT`, lisible dans une messagerie ou un bloc-notes) ; au-delà, et toujours pour le CSV, il part en pièce jointe. Le fichier est écrit dans `cache/exports/`, seul dossier exposé par le `FileProvider` (non exporté, lecture accordée à l'appli choisie seulement), et vidé à chaque nouvel export.
 - **Enregistrer le fichier** : sélecteur de document système (`CreateDocument`), nom proposé `irontap-2026-10-12.txt` (un entraînement) ou `irontap-historique-2026-10-14.csv` (tout l'historique, date du jour). Le document choisi est écrit en mode « wt » (contenu remplacé).
 - Après un partage ou un enregistrement réussi, la feuille se referme (enregistrement : toast système « Fichier enregistré », l'accueil et le détail n'ont pas de toast Nocturne). Un échec s'affiche dans la feuille, qui reste ouverte. La feuille rouverte repart du format Texte.

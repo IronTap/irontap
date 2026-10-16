@@ -7,8 +7,8 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 @Database(
-    entities = [Entrainement::class, Exercice::class, Serie::class, EtatChrono::class],
-    version = 1,
+    entities = [Entrainement::class, Exercice::class, Serie::class, Palier::class, PalierEnCours::class, EtatChrono::class],
+    version = 2,
 )
 @TypeConverters(Convertisseurs::class)
 abstract class BaseIronTap : RoomDatabase() {
@@ -17,6 +17,8 @@ abstract class BaseIronTap : RoomDatabase() {
 
     companion object {
         fun creer(context: Context): BaseIronTap =
-            Room.databaseBuilder(context, BaseIronTap::class.java, "irontap.db").build()
+            Room.databaseBuilder(context, BaseIronTap::class.java, "irontap.db")
+                .addMigrations(Migration1Vers2)
+                .build()
     }
 }

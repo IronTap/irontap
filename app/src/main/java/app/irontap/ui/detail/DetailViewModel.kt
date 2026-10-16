@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteException
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -16,14 +17,14 @@ import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.Horloge
-import app.irontap.donnees.Serie
+import app.irontap.donnees.SerieAvecPaliers
+import app.irontap.logique.LecturePaliers
 import app.irontap.logique.Suggestion
 import app.irontap.logique.ajouterPoids
 import app.irontap.logique.ajouterRepetitions
 import app.irontap.logique.decrireSerie
 import app.irontap.logique.formaterPoids
-import app.irontap.logique.lirePoids
-import app.irontap.logique.lireRepetitions
+import app.irontap.logique.lirePaliers
 import app.irontap.logique.suggerer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,18 +46,31 @@ sealed interface EtatDetail {
     data class Pret(val complet: EntrainementComplet) : EtatDetail
 }
 
-/** Feuille d'édition (écran 7) : [serie] `null` pour « Ajouter une série ». */
-data class EditionSerie(val exercice: Exercice, val serie: Serie?)
+/**
+ * Feuille d'édition : [serie] `null` pour « Ajouter une série ». [tableau] : tableau des paliers (7·D), pour une
+ * dégressive ou après « + Ajouter un palier » ; sinon écran 7 avec ses boutons +X.
+ */
+data class EditionSerie(val exercice: Exercice, val serie: SerieAvecPaliers?, val tableau: Boolean = false)
+
+/** Champs d'un palier de la feuille d'édition. [cle] identifie la ligne (focus, erreurs) quand d'autres sont retirées. */
+class ChampsPalier(val cle: Long, poids: String = "", repetitions: String = "") {
+    val poids = TextFieldState(poids)
+    val repetitions = TextFieldState(repetitions)
+}
 
 /** Série dont la suppression attend confirmation (6b). */
-data class SuppressionSerie(val exercice: Exercice, val serie: Serie) {
-    val description get() = decrireSerie(serie.poidsKg, serie.repetitions)
+data class SuppressionSerie(val exercice: Exercice, val serie: SerieAvecPaliers) {
+    val description get() = decrireSerie(serie.valeurs)
 }
 
 /** Ce que l'écran affiche par-dessus le détail, hors champs de saisie. */
 data class Panneaux(
     val edition: EditionSerie? = null,
-    val erreurRepetitions: Boolean = false,
+    /**
+     * Paliers de l'édition dont les répétitions manquent : clé de la ligne → texte au moment de la validation.
+     * L'erreur disparaît dès que ce texte change.
+     */
+    val paliersEnErreur: Map<Long, String> = emptyMap(),
     val suppression: SuppressionSerie? = null,
     /**
      * Série dont la suppression est confirmée : sa ligne reste ouverte jusqu'à ce qu'elle disparaisse de
@@ -88,9 +102,12 @@ class DetailViewModel(
     private val _panneaux = MutableStateFlow(Panneaux())
     val panneaux: StateFlow<Panneaux> = _panneaux.asStateFlow()
 
-    /** Champs de la feuille d'édition. */
-    val poids = TextFieldState()
-    val repetitions = TextFieldState()
+    /** Paliers de la feuille d'édition, le principal d'abord (un seul pour une série simple). */
+    val paliers = mutableStateListOf<ChampsPalier>()
+
+    private var prochaineCle = 0L
+
+    private fun champs(poids: String = "", repetitions: String = "") = ChampsPalier(prochaineCle++, poids, repetitions)
 
     /** Champ du dialogue « Renommer l'exercice ». */
     val nom = TextFieldState()
@@ -116,7 +133,11 @@ class DetailViewModel(
         // Une erreur disparaît dès que le champ fautif est modifié.
         viewModelScope.launch { texteNom.collect { _panneaux.update { it.copy(erreurNom = false) } } }
         viewModelScope.launch {
-            snapshotFlow { repetitions.text.toString() }.collect { _panneaux.update { it.copy(erreurRepetitions = false) } }
+            snapshotFlow { paliers.associate { it.cle to it.repetitions.text.toString() } }.collect { textes ->
+                _panneaux.update { panneaux ->
+                    panneaux.copy(paliersEnErreur = panneaux.paliersEnErreur.filter { (cle, texte) -> textes[cle] == texte })
+                }
+            }
         }
     }
 
@@ -138,45 +159,67 @@ class DetailViewModel(
         }
     }
 
-    // --- Édition d'une série (écran 7) ---
+    // --- Édition d'une série (écrans 7 et 7·D) ---
 
-    /** Appui sur une série ([serie]) ou sur « Ajouter une série » (`null`) : champs pré-remplis ou vides. */
-    fun ouvrirEdition(exercice: Exercice, serie: Serie?) {
-        poids.setTextAndPlaceCursorAtEnd(serie?.poidsKg?.let(::formaterPoids).orEmpty())
-        repetitions.setTextAndPlaceCursorAtEnd(serie?.repetitions?.toString().orEmpty())
-        _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie)) }
+    /**
+     * Appui sur une série ([serie]) ou sur « Ajouter une série » (`null`) : un palier vide, ou les paliers de la
+     * série ; une dégressive s'ouvre en tableau (7·D).
+     */
+    fun ouvrirEdition(exercice: Exercice, serie: SerieAvecPaliers?) {
+        paliers.clear()
+        serie?.paliers?.forEach { paliers += champs(it.poidsKg?.let(::formaterPoids).orEmpty(), it.repetitions.toString()) }
+        if (paliers.isEmpty()) paliers += champs()
+        _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie, tableau = paliers.size > 1)) }
     }
 
-    fun ajouterAuPoids(valeur: Int) = poids.setTextAndPlaceCursorAtEnd(ajouterPoids(poids.text.toString(), valeur))
+    /** Boutons +X de l'écran 7 (série simple : palier principal). */
+    fun ajouterAuPoids(valeur: Int) = paliers.firstOrNull()?.poids?.let { it.setTextAndPlaceCursorAtEnd(ajouterPoids(it.text.toString(), valeur)) }
 
     fun ajouterAuxRepetitions(valeur: Int) =
-        repetitions.setTextAndPlaceCursorAtEnd(ajouterRepetitions(repetitions.text.toString(), valeur))
+        paliers.firstOrNull()?.repetitions?.let { it.setTextAndPlaceCursorAtEnd(ajouterRepetitions(it.text.toString(), valeur)) }
 
-    /** Même validation qu'en saisie (spec §4.3.5) : répétitions obligatoires, poids facultatif. */
+    /** « + Ajouter un palier » : une ligne vide en dernier, la feuille passe au tableau. Retourne sa clé (focus). */
+    fun ajouterPalier(): Long {
+        val ligne = champs()
+        paliers += ligne
+        _panneaux.update { it.copy(edition = it.edition?.copy(tableau = true)) }
+        return ligne.cle
+    }
+
+    /** ✕ « Retirer ce palier » : jamais le palier principal. Sans palier dégressif, la série redevient simple. */
+    fun retirerPalier(cle: Long) {
+        val index = paliers.indexOfFirst { it.cle == cle }
+        if (index > 0) paliers.removeAt(index)
+    }
+
+    /**
+     * Enregistre tous les paliers (spec §4.5.1) : lignes entièrement vides ignorées, répétitions obligatoires
+     * sur les autres, poids facultatif, comme en saisie (spec §4.3.5).
+     */
     fun enregistrerEdition() {
         val edition = _panneaux.value.edition ?: return
         if (occupe) return
-        val repetitions = lireRepetitions(repetitions.text.toString())
-        if (repetitions == null) {
-            _panneaux.update { it.copy(erreurRepetitions = true) }
-            return
-        }
-        val poids = lirePoids(poids.text.toString())
-        ecrire(apres = ::fermerEdition) {
-            if (edition.serie == null) {
-                dao.ajouterSerie(edition.exercice.id, poids, repetitions, horloge.maintenant())
-            } else {
-                dao.modifierSerie(edition.serie.id, poids, repetitions, horloge.maintenant())
+        val lignes = paliers.toList()
+        when (val lecture = lirePaliers(lignes.map { it.poids.text.toString() to it.repetitions.text.toString() })) {
+            is LecturePaliers.Erreurs -> _panneaux.update { panneaux ->
+                panneaux.copy(paliersEnErreur = lecture.lignes.associate { lignes[it].cle to lignes[it].repetitions.text.toString() })
+            }
+            is LecturePaliers.Valide -> ecrire(apres = ::fermerEdition) {
+                if (edition.serie == null) {
+                    dao.ajouterSerie(edition.exercice.id, lecture.paliers, horloge.maintenant())
+                } else {
+                    dao.modifierSerie(edition.serie.serie.id, lecture.paliers, horloge.maintenant())
+                }
             }
         }
     }
 
-    fun fermerEdition() = _panneaux.update { it.copy(edition = null, erreurRepetitions = false, erreurEnregistrement = false) }
+    fun fermerEdition() = _panneaux.update { it.copy(edition = null, paliersEnErreur = emptyMap(), erreurEnregistrement = false) }
 
     // --- Suppression d'une série (6b) ---
 
     /** Balayage d'une série, ou « Supprimer » de la feuille d'édition : confirmation d'abord. */
-    fun demanderSuppression(exercice: Exercice, serie: Serie) =
+    fun demanderSuppression(exercice: Exercice, serie: SerieAvecPaliers) =
         _panneaux.update { it.copy(suppression = SuppressionSerie(exercice, serie), erreurEnregistrement = false) }
 
     fun annulerSuppression() = _panneaux.update { it.copy(suppression = null, erreurEnregistrement = false) }
@@ -186,12 +229,12 @@ class DetailViewModel(
         val suppression = _panneaux.value.suppression ?: return
         _panneaux.update { panneaux ->
             // La feuille d'édition de cette série se ferme avec elle.
-            val edition = panneaux.edition?.takeUnless { it.serie?.id == suppression.serie.id }
-            panneaux.copy(suppression = null, edition = edition, serieEnSuppression = suppression.serie.id)
+            val edition = panneaux.edition?.takeUnless { it.serie?.serie?.id == suppression.serie.serie.id }
+            panneaux.copy(suppression = null, edition = edition, serieEnSuppression = suppression.serie.serie.id)
         }
         // En cas d'échec, le dialogue revient avec l'erreur.
         ecrire(echec = { it.copy(suppression = suppression, serieEnSuppression = null) }) {
-            dao.supprimerSerie(suppression.serie.id)
+            dao.supprimerSerie(suppression.serie.serie.id)
         }
     }
 

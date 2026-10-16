@@ -108,10 +108,13 @@ abstract class EntrainementDao {
 
     /**
      * Termine l'entraînement (spec §4.3.6) : son chrono est supprimé et, s'il n'a aucune série,
-     * l'entraînement lui-même.
+     * l'entraînement lui-même. Une dégressive en attente est abandonnée, avec l'exercice que son premier
+     * palier avait ouvert si aucune série n'y a été enregistrée.
      */
     @Transaction
     open suspend fun terminer(id: Long, maintenant: Instant) {
+        supprimerPaliersEnCours(id)
+        supprimerExercicesSansSerie(id)
         if (compterSeriesEntrainement(id) == 0) {
             supprimerEntrainement(id)
         } else {
@@ -127,47 +130,87 @@ abstract class EntrainementDao {
     // --- Saisie ---
 
     /**
-     * Enregistre une série de l'entraînement en cours et relance le chrono.
+     * Enregistre une série de l'entraînement en cours et relance le chrono. Ses paliers sont ceux gardés par
+     * « Dégressive » (spec §4.3.9), puis le palier courant [poidsKg] × [repetitions] ; [repetitions] `null` :
+     * pas de palier courant (dialogue 4a, dégressive en attente et champs vides).
      * La série ouvre un nouvel exercice nommé [nomExercice] si c'est la première de l'entraînement
      * ou si la précédente a été suivie de « Nouvel exercice » ; sinon [nomExercice] est ignoré
      * (nom verrouillé). Retourne la série enregistrée, avec son numéro, ou `null` sans rien enregistrer
-     * si un nouvel exercice doit être ouvert et que [nomExercice] est vide, ou si l'entraînement n'est
-     * plus en cours (terminé ou supprimé entre-temps).
+     * s'il n'y a aucun palier, si un nouvel exercice doit être ouvert et que [nomExercice] est vide, ou si
+     * l'entraînement n'est plus en cours (terminé ou supprimé entre-temps).
      */
     @Transaction
     open suspend fun enregistrerSerie(
         entrainementId: Long,
         nomExercice: String,
         poidsKg: Double?,
-        repetitions: Int,
+        repetitions: Int?,
         suite: Suite,
         maintenant: Instant,
         realtime: Long,
-    ): Serie? {
+    ): SerieAvecPaliers? {
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
-        val dernier = lireDernierExercice(entrainementId)
-        val exerciceId = if (dernier == null || entrainement.nouvelExercice) {
-            val nom = nomExercice.trim().ifEmpty { return null }
-            inserer(Exercice(entrainementId = entrainementId, nom = nom, ordre = (dernier?.ordre ?: 0) + 1))
-        } else {
-            dernier.id
-        }
-        val serie = ajouterSerie(exerciceId, poidsKg, repetitions, maintenant)
+        val paliers = lirePaliersEnCours(entrainementId).sortedBy { it.ordre }.map { it.valeurs } +
+            listOfNotNull(repetitions?.let { ValeursPalier(poidsKg, it) })
+        if (paliers.isEmpty()) return null
+        val exerciceId = exerciceCourant(entrainement, nomExercice) ?: return null
+        val serie = ajouterSerie(exerciceId, paliers, maintenant)
+        supprimerPaliersEnCours(entrainementId)
         modifierNouvelExercice(entrainementId, suite == Suite.NouvelExercice)
         enregistrer((lireChrono(entrainementId) ?: EtatChrono(entrainementId)).relance(realtime))
         return serie
     }
 
     /**
-     * Dialogue 4a : enregistre la série affichée puis termine l'entraînement, dans une même transaction.
-     * Si la fin échoue, la série n'est pas enregistrée non plus : un nouvel essai ne la double pas.
+     * « Dégressive » (spec §4.3.9) : garde le palier [poidsKg] × [repetitions] pour la série en cours, sans
+     * toucher au chrono ni au numéro de série. Le nom se verrouille : un nouvel exercice est ouvert dès ce
+     * premier palier, comme le ferait [enregistrerSerie]. Retourne le palier gardé, ou `null` sans rien
+     * enregistrer si un nouvel exercice doit être ouvert et que [nomExercice] est vide, ou si l'entraînement
+     * n'est plus en cours.
+     */
+    @Transaction
+    open suspend fun ajouterPalierEnCours(
+        entrainementId: Long,
+        nomExercice: String,
+        poidsKg: Double?,
+        repetitions: Int,
+    ): PalierEnCours? {
+        verifier(ValeursPalier(poidsKg, repetitions))
+        val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
+        exerciceCourant(entrainement, nomExercice) ?: return null
+        val palier = PalierEnCours(
+            entrainementId = entrainementId,
+            ordre = compterPaliersEnCours(entrainementId) + 1,
+            poidsKg = poidsKg,
+            repetitions = repetitions,
+        )
+        return palier.copy(id = inserer(palier))
+    }
+
+    /**
+     * Exercice qui reçoit la prochaine série ou le prochain palier : le dernier de l'entraînement, ou un nouveau
+     * nommé [nomExercice] si c'est le premier ou après « Nouvel exercice ». `null` si ce nom est alors vide.
+     */
+    private suspend fun exerciceCourant(entrainement: Entrainement, nomExercice: String): Long? {
+        val dernier = lireDernierExercice(entrainement.id)
+        if (dernier != null && !entrainement.nouvelExercice) return dernier.id
+        val nom = nomExercice.trim().ifEmpty { return null }
+        val id = inserer(Exercice(entrainementId = entrainement.id, nom = nom, ordre = (dernier?.ordre ?: 0) + 1))
+        modifierNouvelExercice(entrainement.id, false)
+        return id
+    }
+
+    /**
+     * Dialogue 4a : enregistre la série affichée (paliers en attente compris, cf. [enregistrerSerie]) puis
+     * termine l'entraînement, dans une même transaction. Si la fin échoue, la série n'est pas enregistrée
+     * non plus : un nouvel essai ne la double pas.
      */
     @Transaction
     open suspend fun enregistrerSerieEtTerminer(
         entrainementId: Long,
         nomExercice: String,
         poidsKg: Double?,
-        repetitions: Int,
+        repetitions: Int?,
         maintenant: Instant,
         realtime: Long,
     ) {
@@ -190,25 +233,35 @@ abstract class EntrainementDao {
         renommerExerciceBrut(id, nomNettoye)
     }
 
-    /** Ajoute une série en dernière position de l'exercice. */
+    /** Ajoute une série de [paliers] (au moins un, le principal d'abord) en dernière position de l'exercice. */
     @Transaction
-    open suspend fun ajouterSerie(exerciceId: Long, poidsKg: Double?, repetitions: Int, maintenant: Instant): Serie {
-        require(repetitions > 0) { "Répétitions : $repetitions" }
-        require(poidsKg == null || poidsKg >= 0) { "Poids : $poidsKg" }
-        val serie = Serie(
-            exerciceId = exerciceId,
-            ordre = compterSeries(exerciceId) + 1,
-            poidsKg = poidsKg,
-            repetitions = repetitions,
-            creeLe = maintenant,
-        )
-        return serie.copy(id = inserer(serie))
+    open suspend fun ajouterSerie(exerciceId: Long, paliers: List<ValeursPalier>, maintenant: Instant): SerieAvecPaliers {
+        require(paliers.isNotEmpty()) { "Série sans palier" }
+        paliers.forEach(::verifier)
+        val serie = Serie(exerciceId = exerciceId, ordre = compterSeries(exerciceId) + 1, creeLe = maintenant)
+        val enregistree = serie.copy(id = inserer(serie))
+        return SerieAvecPaliers(enregistree, insererPaliers(enregistree.id, paliers))
     }
 
-    suspend fun modifierSerie(id: Long, poidsKg: Double?, repetitions: Int, maintenant: Instant) {
-        require(repetitions > 0) { "Répétitions : $repetitions" }
-        require(poidsKg == null || poidsKg >= 0) { "Poids : $poidsKg" }
-        modifierSerieBrut(id, poidsKg, repetitions, maintenant)
+    /** Remplace tous les paliers de la série (édition, spec §4.5 et §4.5.1) et renseigne `modifie_le`. */
+    @Transaction
+    open suspend fun modifierSerie(id: Long, paliers: List<ValeursPalier>, maintenant: Instant) {
+        require(paliers.isNotEmpty()) { "Série sans palier" }
+        paliers.forEach(::verifier)
+        supprimerPaliers(id)
+        insererPaliers(id, paliers)
+        marquerModifiee(id, maintenant)
+    }
+
+    private suspend fun insererPaliers(serieId: Long, paliers: List<ValeursPalier>): List<Palier> =
+        paliers.mapIndexed { index, valeurs ->
+            val palier = Palier(serieId = serieId, ordre = index + 1, poidsKg = valeurs.poidsKg, repetitions = valeurs.repetitions)
+            palier.copy(id = inserer(palier))
+        }
+
+    private fun verifier(palier: ValeursPalier) {
+        require(palier.repetitions > 0) { "Répétitions : ${palier.repetitions}" }
+        require(palier.poidsKg == null || palier.poidsKg >= 0) { "Poids : ${palier.poidsKg}" }
     }
 
     /**
@@ -267,10 +320,11 @@ abstract class EntrainementDao {
 
     @Query(
         """
-        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.poids_kg, s.repetitions
-        FROM serie s JOIN exercice x ON x.id = s.exercice_id JOIN entrainement t ON t.id = x.entrainement_id
+        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions
+        FROM palier p JOIN serie s ON s.id = p.serie_id JOIN exercice x ON x.id = s.exercice_id
+        JOIN entrainement t ON t.id = x.entrainement_id
         WHERE x.nom IN (:noms) AND t.id != :entrainementId
-        ORDER BY t.date DESC, t.cree_le DESC, t.id DESC, x.ordre, s.ordre
+        ORDER BY t.date DESC, t.cree_le DESC, t.id DESC, x.ordre, s.ordre, p.ordre
         """,
     )
     protected abstract suspend fun lireSeriesHistorique(entrainementId: Long, noms: List<String>): List<SerieHistorique>
@@ -298,6 +352,35 @@ abstract class EntrainementDao {
     @Insert
     protected abstract suspend fun inserer(serie: Serie): Long
 
+    @Insert
+    protected abstract suspend fun inserer(palier: Palier): Long
+
+    @Insert
+    protected abstract suspend fun inserer(palier: PalierEnCours): Long
+
+    @Query("SELECT * FROM palier_en_cours WHERE entrainement_id = :entrainementId")
+    protected abstract suspend fun lirePaliersEnCours(entrainementId: Long): List<PalierEnCours>
+
+    @Query("SELECT COUNT(*) FROM palier_en_cours WHERE entrainement_id = :entrainementId")
+    protected abstract suspend fun compterPaliersEnCours(entrainementId: Long): Int
+
+    @Query("DELETE FROM palier_en_cours WHERE entrainement_id = :entrainementId")
+    protected abstract suspend fun supprimerPaliersEnCours(entrainementId: Long)
+
+    @Query(
+        """
+        DELETE FROM exercice WHERE entrainement_id = :entrainementId
+        AND NOT EXISTS (SELECT 1 FROM serie s WHERE s.exercice_id = exercice.id)
+        """,
+    )
+    protected abstract suspend fun supprimerExercicesSansSerie(entrainementId: Long)
+
+    @Query("DELETE FROM palier WHERE serie_id = :serieId")
+    protected abstract suspend fun supprimerPaliers(serieId: Long)
+
+    @Query("UPDATE serie SET modifie_le = :maintenant WHERE id = :id")
+    protected abstract suspend fun marquerModifiee(id: Long, maintenant: Instant)
+
     @Upsert
     protected abstract suspend fun enregistrer(etat: EtatChrono)
 
@@ -321,14 +404,6 @@ abstract class EntrainementDao {
 
     @Query("UPDATE exercice SET ordre = ordre - 1 WHERE entrainement_id = :entrainementId AND ordre > :ordre")
     protected abstract suspend fun decalerExercices(entrainementId: Long, ordre: Int)
-
-    @Query(
-        """
-        UPDATE serie SET poids_kg = :poidsKg, repetitions = :repetitions, modifie_le = :maintenant
-        WHERE id = :id
-        """,
-    )
-    protected abstract suspend fun modifierSerieBrut(id: Long, poidsKg: Double?, repetitions: Int, maintenant: Instant)
 
     @Query("DELETE FROM serie WHERE id = :id")
     protected abstract suspend fun supprimerSerieBrut(id: Long)

@@ -17,7 +17,9 @@ import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.Horloge
-import app.irontap.donnees.Serie
+import app.irontap.donnees.PalierEnCours
+import app.irontap.donnees.SerieAvecPaliers
+import app.irontap.donnees.ValeursPalier
 import app.irontap.logique.HistoriqueExercice
 import app.irontap.logique.Suggestion
 import app.irontap.logique.ajouterPoids
@@ -57,6 +59,8 @@ sealed interface EtatSaisie {
         val entrainement: Entrainement,
         val exercices: List<ExerciceAvecSeries>,
         val chrono: EtatChrono?,
+        /** Paliers gardés par « Dégressive » pour la série en cours (spec §4.3.9). */
+        val paliersEnCours: List<PalierEnCours> = emptyList(),
     ) : EtatSaisie {
         private val dernier = exercices.lastOrNull()
 
@@ -71,12 +75,22 @@ sealed interface EtatSaisie {
 
         /** « Tirage vertical · Série 3 » (notification, accueil) ; après « Nouvel exercice », le nom n'est pas encore connu. */
         val ligne = "${nomVerrouille ?: "Exercice $numeroExercice"} · Série $numeroSerie"
+
+        /** Valeurs des paliers déjà gardés, dans l'ordre. */
+        val paliersPrecedents = paliersEnCours.map { it.valeurs }
+
+        /** En-tête en mode dégressive (3·D A2, A3) : « 50 kg × 10 ↓ 30 kg × 8 ↓ … », `null` hors dégressive. */
+        val chaineDegressive = if (paliersEnCours.isEmpty()) null else decrireSerie(paliersPrecedents) + " ↓ …"
     }
 }
 
-/** Série remplie et valide, prête à être enregistrée. [nom] est ignoré si le nom est verrouillé. */
-data class SerieSaisie(val nom: String, val poidsKg: Double?, val repetitions: Int) {
-    val description get() = decrireSerie(poidsKg, repetitions)
+/**
+ * Série prête à être enregistrée : paliers gardés par « Dégressive » ([precedents]), puis palier courant
+ * ([courant], absent quand le dialogue 4a ne retient que les paliers gardés). [nom] est ignoré si le nom
+ * est verrouillé.
+ */
+data class SerieSaisie(val nom: String, val precedents: List<ValeursPalier>, val courant: ValeursPalier?) {
+    val description get() = decrireSerie(precedents + listOfNotNull(courant))
 }
 
 /** Dialogue « Terminer l'entraînement ? » (spec §4.3.6). */
@@ -145,7 +159,11 @@ class SaisieViewModel(
 
     val etat: StateFlow<EtatSaisie> = dao.observerEnCoursComplet()
         .map { enCours ->
-            if (enCours == null) EtatSaisie.Aucun else EtatSaisie.EnCours(enCours.entrainement, enCours.exercices, enCours.chrono)
+            if (enCours == null) {
+                EtatSaisie.Aucun
+            } else {
+                EtatSaisie.EnCours(enCours.entrainement, enCours.exercices, enCours.chrono, enCours.paliersEnCours)
+            }
         }
         .onEach { if (it is EtatSaisie.EnCours) brouillon.pour(it.entrainement.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EtatSaisie.Chargement)
@@ -190,7 +208,7 @@ class SaisieViewModel(
     /** Dernière écriture en base lancée : les suivantes l'attendent, pour s'exécuter dans l'ordre des appuis. */
     private var derniereEcriture: Job? = null
 
-    /** Enregistrement de série en cours : un double appui ne doit pas enregistrer deux fois la même série. */
+    /** Enregistrement de série ou de palier en cours : un double appui ne doit pas enregistrer deux fois la même série. */
     private var enregistrement: Job? = null
 
     private var toastJob: Job? = null
@@ -256,7 +274,8 @@ class SaisieViewModel(
             val enregistree = sauver(enCours, serie, suite)
             if (enregistree != null) {
                 vider(suite)
-                afficherToast("Série ${enregistree.ordre} enregistrée · ${serie.description}")
+                // Paliers lus en base : ceux d'une dégressive commencée avant un retour à l'accueil compris.
+                afficherToast("Série ${enregistree.serie.ordre} enregistrée · ${decrireSerie(enregistree.valeurs)}")
             } else if (serie.nom.isBlank()) {
                 // Écran en retard sur la base : le nom était requis alors qu'il semblait verrouillé.
                 _formulaire.update { it.copy(erreurNom = true) }
@@ -264,31 +283,51 @@ class SaisieViewModel(
         }
     }
 
-    /** Série remplie et valide, ou `null` après avoir signalé les champs fautifs. */
+    /**
+     * « Dégressive » (spec §4.3.9) : même validation que « Nouvelle série ». Le palier est gardé pour la série
+     * en cours, poids et répétitions sont vidés, le nom se verrouille ; ni le chrono ni le numéro de série ne changent.
+     */
+    override fun degressive() {
+        val enCours = etat.value as? EtatSaisie.EnCours ?: return
+        if (enregistrement?.isActive == true) return
+        val serie = valider(enCours) ?: return
+        val palier = checkNotNull(serie.courant)
+        enregistrement = ecrire {
+            val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, serie.nom, palier.poidsKg, palier.repetitions)
+            if (garde != null) {
+                vider(Suite.NouvelleSerie)
+            } else if (serie.nom.isBlank()) {
+                _formulaire.update { it.copy(erreurNom = true) }
+            }
+        }
+    }
+
+    /** Série remplie et valide (palier courant compris), ou `null` après avoir signalé les champs fautifs. */
     private fun valider(enCours: EtatSaisie.EnCours): SerieSaisie? {
         val nomManquant = !enCours.verrouille && nom.text.isBlank()
         val repetitions = lireRepetitions(repetitions.text.toString())
         _formulaire.update { it.copy(erreurNom = nomManquant, erreurRepetitions = repetitions == null) }
         if (nomManquant || repetitions == null) return null
-        return SerieSaisie(nom.text.toString(), lirePoids(poids.text.toString()), repetitions)
+        return SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, ValeursPalier(lirePoids(poids.text.toString()), repetitions))
     }
 
-    private suspend fun sauver(enCours: EtatSaisie.EnCours, serie: SerieSaisie, suite: Suite): Serie? =
+    private suspend fun sauver(enCours: EtatSaisie.EnCours, serie: SerieSaisie, suite: Suite): SerieAvecPaliers? =
         dao.enregistrerSerie(
             entrainementId = enCours.entrainement.id,
             nomExercice = serie.nom,
-            poidsKg = serie.poidsKg,
-            repetitions = serie.repetitions,
+            poidsKg = serie.courant?.poidsKg,
+            repetitions = serie.courant?.repetitions,
             suite = suite,
             maintenant = horloge.maintenant(),
             realtime = horloge.realtime(),
         )
 
+    /** Champs vidés après une série ([suite]) ou un palier (comme « Nouvelle série »). */
     private fun vider(suite: Suite) {
         poids.clearText()
         repetitions.clearText()
         if (suite == Suite.NouvelExercice) nom.clearText()
-        // Après « Nouvelle série », le nom reste dans le champ le temps qu'il se verrouille : pas de suggestions.
+        // Après « Nouvelle série » ou « Dégressive », le nom reste dans le champ le temps qu'il se verrouille : pas de suggestions.
         val choisi = if (suite == Suite.NouvelleSerie) nom.text.toString() else null
         _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = choisi) }
     }
@@ -324,15 +363,26 @@ class SaisieViewModel(
 
     // --- Fin de l'entraînement ---
 
-    /** Ouvre le dialogue de fin, une fois les écritures en cours terminées (les champs ont pu être vidés). */
+    /**
+     * Ouvre le dialogue de fin, une fois les écritures en cours terminées (les champs ont pu être vidés). L'état
+     * est relu en base : celui de l'écran peut ne pas encore montrer un palier que « Dégressive » vient de
+     * garder, et 4b le ferait abandonner sans le proposer.
+     */
     override fun demanderFin() {
         viewModelScope.launch {
             derniereEcriture?.join()
-            val enCours = etat.value as? EtatSaisie.EnCours ?: return@launch
-            val repetitions = lireRepetitions(repetitions.text.toString())
-            val remplie = (enCours.verrouille || nom.text.isNotBlank()) && repetitions != null
+            val lu = try {
+                dao.lireEnCoursComplet()
+            } catch (e: SQLiteException) {
+                afficherToast("Lecture impossible : stockage indisponible", erreur = true)
+                return@launch
+            } ?: return@launch
+            val enCours = EtatSaisie.EnCours(lu.entrainement, lu.exercices, lu.chrono, lu.paliersEnCours)
+            val courant = lireRepetitions(repetitions.text.toString())?.let { ValeursPalier(lirePoids(poids.text.toString()), it) }
+            // Une dégressive en attente fait proposer sa série (spec §4.3.9), avec le palier courant s'il est valide.
+            val remplie = (enCours.verrouille || nom.text.isNotBlank()) && (courant != null || enCours.paliersEnCours.isNotEmpty())
             val dialogue = if (remplie) {
-                DialogueFin.AvecSerie(SerieSaisie(nom.text.toString(), lirePoids(poids.text.toString()), repetitions))
+                DialogueFin.AvecSerie(SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, courant))
             } else {
                 DialogueFin.Simple
             }
@@ -354,7 +404,8 @@ class SaisieViewModel(
         ecrire {
             val id = enCours.entrainement.id
             if (serie != null) {
-                dao.enregistrerSerieEtTerminer(id, serie.nom, serie.poidsKg, serie.repetitions, horloge.maintenant(), horloge.realtime())
+                val courant = serie.courant
+                dao.enregistrerSerieEtTerminer(id, serie.nom, courant?.poidsKg, courant?.repetitions, horloge.maintenant(), horloge.realtime())
             } else {
                 dao.terminer(id, horloge.maintenant())
             }

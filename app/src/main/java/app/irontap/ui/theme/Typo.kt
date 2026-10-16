@@ -87,6 +87,15 @@ object Typo {
     /** Grandes actions : 18 / 500, interligne 1,15. */
     val GrandeAction = style(18).copy(lineHeight = 1.15.em)
 
+    /** Grandes actions de la saisie, sur 3 colonnes (3·D) : 16 / 500, interligne 1,15. */
+    val GrandeActionCompacte = style(16).copy(lineHeight = 1.15.em)
+
+    /** Valeur d'un palier dans le tableau d'édition d'une dégressive (7·D) : 24 / 500, interligne naturel (champ). */
+    val ValeurPalier = style(24).interligneNaturel()
+
+    /** Palier dégressif sous la valeur d'une série (détail 6a, popup 3g) : 16 / 500. */
+    val PalierDegressif = style(16)
+
     /** Nom d'exercice dans le détail, titre du bandeau « en cours » : 18 / 500. */
     val TitreSection = style(18)
 
@@ -128,6 +137,9 @@ object Typo {
 
     /** Petit texte (libellé au-dessus de l'en-tête de saisie) : 12 / 400. */
     val Petit = style(12, FontWeight.Normal)
+
+    /** Badge « ↓ dégressive » de l'en-tête de saisie : 11 / 500 (hérité du numéro de série dans la maquette). */
+    val Badge = style(11)
 
     /**
      * Aperçu de l'export (écran 8) : 12 / 400 en chasse fixe, interligne 1,55. Police monospace du système :

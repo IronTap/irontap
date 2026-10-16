@@ -1,0 +1,362 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "d244e7a7b7a7e0f527064780e56e7fb0",
+    "entities": [
+      {
+        "tableName": "entrainement",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` TEXT NOT NULL, `libelle` TEXT, `cree_le` INTEGER NOT NULL, `termine_le` INTEGER, `nouvel_exercice` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "libelle",
+            "columnName": "libelle",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "creeLe",
+            "columnName": "cree_le",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "termineLe",
+            "columnName": "termine_le",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "nouvelExercice",
+            "columnName": "nouvel_exercice",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "exercice",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `entrainement_id` INTEGER NOT NULL, `nom` TEXT NOT NULL, `ordre` INTEGER NOT NULL, FOREIGN KEY(`entrainement_id`) REFERENCES `entrainement`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entrainementId",
+            "columnName": "entrainement_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nom",
+            "columnName": "nom",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordre",
+            "columnName": "ordre",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_exercice_entrainement_id",
+            "unique": false,
+            "columnNames": [
+              "entrainement_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_exercice_entrainement_id` ON `${TABLE_NAME}` (`entrainement_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "entrainement",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "entrainement_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "serie",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `exercice_id` INTEGER NOT NULL, `ordre` INTEGER NOT NULL, `cree_le` INTEGER NOT NULL, `modifie_le` INTEGER, FOREIGN KEY(`exercice_id`) REFERENCES `exercice`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exerciceId",
+            "columnName": "exercice_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordre",
+            "columnName": "ordre",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creeLe",
+            "columnName": "cree_le",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifieLe",
+            "columnName": "modifie_le",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_serie_exercice_id",
+            "unique": false,
+            "columnNames": [
+              "exercice_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_serie_exercice_id` ON `${TABLE_NAME}` (`exercice_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "exercice",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "exercice_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "palier",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `serie_id` INTEGER NOT NULL, `ordre` INTEGER NOT NULL, `poids_kg` REAL, `repetitions` INTEGER NOT NULL, FOREIGN KEY(`serie_id`) REFERENCES `serie`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serieId",
+            "columnName": "serie_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordre",
+            "columnName": "ordre",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "poidsKg",
+            "columnName": "poids_kg",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "repetitions",
+            "columnName": "repetitions",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_palier_serie_id",
+            "unique": false,
+            "columnNames": [
+              "serie_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_palier_serie_id` ON `${TABLE_NAME}` (`serie_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "serie",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "serie_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "palier_en_cours",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `entrainement_id` INTEGER NOT NULL, `ordre` INTEGER NOT NULL, `poids_kg` REAL, `repetitions` INTEGER NOT NULL, FOREIGN KEY(`entrainement_id`) REFERENCES `entrainement`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entrainementId",
+            "columnName": "entrainement_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordre",
+            "columnName": "ordre",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "poidsKg",
+            "columnName": "poids_kg",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "repetitions",
+            "columnName": "repetitions",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_palier_en_cours_entrainement_id",
+            "unique": false,
+            "columnNames": [
+              "entrainement_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_palier_en_cours_entrainement_id` ON `${TABLE_NAME}` (`entrainement_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "entrainement",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "entrainement_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "etat_chrono",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`entrainement_id` INTEGER NOT NULL, `etat` TEXT NOT NULL, `demarre_a` INTEGER, `cumul_ms` INTEGER NOT NULL, PRIMARY KEY(`entrainement_id`), FOREIGN KEY(`entrainement_id`) REFERENCES `entrainement`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "entrainementId",
+            "columnName": "entrainement_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "etat",
+            "columnName": "etat",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "demarreA",
+            "columnName": "demarre_a",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cumulMs",
+            "columnName": "cumul_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "entrainement_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "entrainement",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "entrainement_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd244e7a7b7a7e0f527064780e56e7fb0')"
+    ]
+  }
+}

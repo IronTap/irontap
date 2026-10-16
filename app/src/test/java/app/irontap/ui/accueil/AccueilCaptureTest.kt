@@ -7,7 +7,7 @@ import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.EtatChrono.Etat
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.serieDeTest
 import app.irontap.ui.saisie.EtatSaisie
 import app.irontap.ui.theme.IronTapTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
@@ -48,7 +48,7 @@ class AccueilCaptureTest {
         listOf(
             ExerciceAvecSeries(
                 Exercice(1, 1, "Tirage vertical", 1),
-                List(2) { Serie(it.toLong(), 1, it + 1, 40.0, 12, t0) },
+                List(2) { serieDeTest(it.toLong(), 1, it + 1, 40.0, 12, t0) },
             ),
         ),
         EtatChrono(1, Etat.EnCours, demarreA = 0),

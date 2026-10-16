@@ -56,7 +56,7 @@ class EntrainementDaoTest {
 
     /** Exercices sous la forme « ordre.nom: ordre/poids×reps, … » pour comparer d'un coup d'œil. */
     private suspend fun resume(id: Long) = exercices(id).map { (exercice, series) ->
-        "${exercice.ordre}.${exercice.nom}: " + series.joinToString { "${it.ordre}/${it.poidsKg}×${it.repetitions}" }
+        "${exercice.ordre}.${exercice.nom}: " + series.joinToString { (serie, paliers) -> "${serie.ordre}/" + paliers.joinToString("↓") { "${it.poidsKg}×${it.repetitions}" } }
     }
 
     @Test
@@ -92,14 +92,14 @@ class EntrainementDaoTest {
         val id = creer()
 
         val s1 = serie(id, nom = "  Tirage vertical ", poids = 40.0, reps = 15)
-        assertEquals(1, s1?.ordre)
+        assertEquals(1, s1?.serie?.ordre)
         // Nom verrouillé : celui passé est ignoré.
         serie(id, nom = "ignoré", poids = 45.0, reps = 12, suite = Suite.NouvelExercice)
         assertTrue(dao.lireEnCours()!!.nouvelExercice)
         serie(id, nom = "Curl haltères", poids = 12.5, reps = 12)
         assertEquals(false, dao.lireEnCours()!!.nouvelExercice)
         val s4 = serie(id, poids = null, reps = 8)
-        assertEquals(2, s4?.ordre)
+        assertEquals(2, s4?.serie?.ordre)
 
         assertEquals(
             listOf("1.Tirage vertical: 1/40.0×15, 2/45.0×12", "2.Curl haltères: 1/12.5×12, 2/null×8"),
@@ -160,7 +160,7 @@ class EntrainementDaoTest {
         val s2 = serie(id, reps = 12)
         serie(id, reps = 10)
 
-        dao.supprimerSerie(s2!!.id)
+        dao.supprimerSerie(s2!!.serie.id)
 
         assertEquals(listOf("1.Tirage: 1/40.0×15, 2/40.0×10"), resume(id))
     }
@@ -173,12 +173,12 @@ class EntrainementDaoTest {
         serie(id, nom = "Dips")
         dao.terminer(id, t0)
 
-        dao.supprimerSerie(seule!!.id)
+        dao.supprimerSerie(seule!!.serie.id)
 
         assertEquals(listOf("1.Tirage: 1/40.0×10", "2.Dips: 1/40.0×10"), resume(id))
         // Un entraînement sans exercice reste dans l'historique.
-        dao.supprimerSerie(exercices(id).first().series.single().id)
-        dao.supprimerSerie(exercices(id).first().series.single().id)
+        dao.supprimerSerie(exercices(id).first().series.single().serie.id)
+        dao.supprimerSerie(exercices(id).first().series.single().serie.id)
         assertNotNull(dao.observer(id).first())
         assertTrue(exercices(id).isEmpty())
     }
@@ -192,12 +192,12 @@ class EntrainementDaoTest {
         val plusTard = t0.plusSeconds(86_400)
 
         dao.renommerExercice(exercice.id, "  Tirage vertical ")
-        dao.modifierSerie(s1!!.id, 41.25, 14, plusTard)
-        val ajout = dao.ajouterSerie(exercice.id, null, 20, plusTard)
+        dao.modifierSerie(s1!!.serie.id, listOf(ValeursPalier(41.25, 14)), plusTard)
+        val ajout = dao.ajouterSerie(exercice.id, listOf(ValeursPalier(null, 20)), plusTard)
 
-        assertEquals(2, ajout.ordre)
+        assertEquals(2, ajout.serie.ordre)
         assertEquals(listOf("1.Tirage vertical: 1/41.25×14, 2/null×20"), resume(id))
-        assertEquals(plusTard, exercices(id).single().series.first().modifieLe)
+        assertEquals(plusTard, exercices(id).single().series.first().serie.modifieLe)
     }
 
     @Test
@@ -252,7 +252,7 @@ class EntrainementDaoTest {
         assertEquals(listOf(soir, matin, matin, ancien, ancien, rattrapage), series.map { it.entrainementId })
         assertEquals(listOf(9, 12, 6, 10, 8, 12), series.map { it.repetitions })
         assertEquals(listOf(52.5, null, 60.0, 50.0, 55.0, 45.0), series.map { it.poidsKg })
-        assertEquals(SerieHistorique(soir, lundi.minusDays(7), "Soir", "Développé couché", 52.5, 9), series.first())
+        assertEquals(SerieHistorique(soir, lundi.minusDays(7), "Soir", "Développé couché", series.first().serieId, 52.5, 9), series.first())
         assertEquals("developpe COUCHE", series[1].nom)
 
         // Exercice de l'entraînement en cours seulement, nom inconnu ou vide : rien.
@@ -263,6 +263,98 @@ class EntrainementDaoTest {
             setOf("Développé couché", "developpe COUCHE", "Squat"),
             dao.observerNomsExercicesHors(enCours).first().toSet(),
         )
+    }
+
+    @Test
+    fun `degressive, paliers gardes sans toucher au chrono, puis une seule serie`() = runTest {
+        val id = creer()
+        serie(id, nom = "Squat", poids = 100.0, reps = 5, suite = Suite.NouvelExercice, realtime = 2_000)
+        val chrono = dao.lireChrono(id)
+
+        // Premier palier d'un nouvel exercice : l'exercice est ouvert (nom verrouillé), sans série.
+        assertNotNull(dao.ajouterPalierEnCours(id, " Tirage vertical ", 50.0, 10))
+        assertNotNull(dao.ajouterPalierEnCours(id, "ignoré", 30.0, 8))
+        val enCours = checkNotNull(dao.lireEnCoursComplet())
+        assertEquals(listOf("Squat", "Tirage vertical"), enCours.exercices.map { it.exercice.nom })
+        assertTrue(enCours.exercices[1].series.isEmpty())
+        assertEquals(false, enCours.entrainement.nouvelExercice)
+        assertEquals(listOf(ValeursPalier(50.0, 10), ValeursPalier(30.0, 8)), enCours.paliersEnCours.map { it.valeurs })
+        assertEquals(listOf(1, 2), enCours.paliersEnCours.map { it.ordre })
+        assertEquals(chrono, dao.lireChrono(id))
+
+        val enregistree = checkNotNull(dao.enregistrerSerie(id, "", 20.0, 6, Suite.NouvelleSerie, t0, 9_000))
+        assertEquals(1, enregistree.serie.ordre)
+        assertEquals(listOf(ValeursPalier(50.0, 10), ValeursPalier(30.0, 8), ValeursPalier(20.0, 6)), enregistree.valeurs)
+        assertEquals(listOf("1.Squat: 1/100.0×5", "2.Tirage vertical: 1/50.0×10↓30.0×8↓20.0×6"), resume(id))
+        assertTrue(checkNotNull(dao.lireEnCoursComplet()).paliersEnCours.isEmpty())
+        assertEquals(EtatChrono(id, Etat.EnCours, demarreA = 9_000), dao.lireChrono(id))
+    }
+
+    @Test
+    fun `degressive sans nom pour un nouvel exercice, rien n'est garde`() = runTest {
+        val id = creer()
+        assertNull(dao.ajouterPalierEnCours(id, "  ", 50.0, 10))
+        assertTrue(checkNotNull(dao.lireEnCoursComplet()).let { it.exercices.isEmpty() && it.paliersEnCours.isEmpty() })
+        // Ni sur un entraînement terminé.
+        serie(id, nom = "Squat")
+        dao.terminer(id, t0)
+        assertNull(dao.ajouterPalierEnCours(id, "Squat", 50.0, 10))
+    }
+
+    @Test
+    fun `4a avec seulement des paliers gardes, et fin qui abandonne une degressive`() = runTest {
+        val id = creer()
+        serie(id, nom = "Squat", suite = Suite.NouvelExercice)
+        dao.ajouterPalierEnCours(id, "Tirage", 50.0, 10)
+        dao.enregistrerSerieEtTerminer(id, "", null, null, t0, 0)
+        assertEquals(listOf("1.Squat: 1/40.0×10", "2.Tirage: 1/50.0×10"), resume(id))
+
+        // Terminer sans enregistrer : paliers gardés et exercice ouvert par le premier palier abandonnés.
+        val autre = creer()
+        serie(autre, nom = "Squat", suite = Suite.NouvelExercice)
+        dao.ajouterPalierEnCours(autre, "Tirage", 50.0, 10)
+        dao.terminer(autre, t0)
+        assertEquals(listOf("1.Squat: 1/40.0×10"), resume(autre))
+        // Seulement une dégressive commencée : l'entraînement sans série est supprimé.
+        val vide = creer()
+        dao.ajouterPalierEnCours(vide, "Tirage", 50.0, 10)
+        dao.terminer(vide, t0)
+        assertNull(dao.lireComplet(vide))
+    }
+
+    @Test
+    fun `modifier une serie remplace tous ses paliers`() = runTest {
+        val id = creer()
+        val simple = checkNotNull(serie(id, nom = "Tirage", poids = 45.0, reps = 10))
+        dao.terminer(id, t0)
+        val plusTard = t0.plusSeconds(60)
+
+        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6)), plusTard)
+        assertEquals(listOf("1.Tirage: 1/45.0×10↓30.0×8↓null×6"), resume(id))
+        assertEquals(plusTard, exercices(id).single().series.single().serie.modifieLe)
+
+        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(40.0, 12)), plusTard)
+        assertEquals(listOf("1.Tirage: 1/40.0×12"), resume(id))
+        assertEquals(listOf(1), exercices(id).single().series.single().paliers.map { it.ordre })
+
+        // Supprimer la série emporte ses paliers ; l'exercice vide disparaît.
+        dao.supprimerSerie(simple.serie.id)
+        assertTrue(exercices(id).isEmpty())
+    }
+
+    @Test
+    fun `historique d'un exercice, une ligne par palier dans l'ordre`() = runTest {
+        val passe = creer(lundi.minusDays(7))
+        serie(passe, nom = "Tirage", poids = 40.0, reps = 15)
+        dao.ajouterPalierEnCours(passe, "Tirage", 45.0, 10)
+        serie(passe, poids = 30.0, reps = 8)
+        dao.terminer(passe, t0)
+        val enCours = creer()
+
+        val lignes = dao.lireHistoriqueExercice(enCours, "tirage")
+        assertEquals(listOf(15, 10, 8), lignes.map { it.repetitions })
+        val (simple, degressive) = exercices(passe).single().series.map { it.serie.id }
+        assertEquals(listOf(simple, degressive, degressive), lignes.map { it.serieId })
     }
 
     @Test
@@ -277,7 +369,7 @@ class EntrainementDaoTest {
 
         val complet = dao.lireComplet(id)!!
         assertEquals(listOf("Tirage", "Curl"), complet.exercices.map { it.exercice.nom })
-        assertEquals(listOf(15, 12), complet.exercices.first().series.map { it.repetitions })
+        assertEquals(listOf(15, 12), complet.exercices.first().series.map { it.paliers.single().repetitions })
         assertEquals(listOf(id), dao.observerHistoriqueComplet().first().map { it.entrainement.id })
     }
 
@@ -319,7 +411,7 @@ class EntrainementDaoTest {
         val enCours = dao.observerEnCoursComplet().first()!!
         assertEquals(id, enCours.entrainement.id)
         assertEquals(listOf("Tirage", "Curl"), enCours.exercices.map { it.exercice.nom })
-        assertEquals(listOf(listOf(15, 12), listOf(12)), enCours.exercices.map { e -> e.series.map { it.repetitions } })
+        assertEquals(listOf(listOf(15, 12), listOf(12)), enCours.exercices.map { e -> e.series.map { it.paliers.single().repetitions } })
         assertEquals(EtatChrono(id, Etat.EnCours, demarreA = 4_000), enCours.chrono)
 
         dao.terminer(id, t0)

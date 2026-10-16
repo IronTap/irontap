@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -69,7 +70,8 @@ fun BoutonPrincipal(
 
 /**
  * Action secondaire. Par défaut : 56 dp en 16 / 500 neutre-200 (« Nouvel entraînement » en 1c) ;
- * les grandes actions de la saisie passent `hauteur = 72.dp, style = Typo.GrandeAction, couleurTexte = Couleurs.Texte`.
+ * les grandes actions de la saisie passent `hauteur = 72.dp, style = Typo.GrandeActionCompacte, couleurTexte = Couleurs.Texte`.
+ * [iconeAuDessus] : icône au-dessus du libellé, en [couleurIcone] (« Dégressive », 3·D).
  */
 @Composable
 fun BoutonSecondaire(
@@ -84,7 +86,12 @@ fun BoutonSecondaire(
     tailleIcone: Dp = 18.dp,
     margeHorizontale: Dp = 16.dp,
     actif: Boolean = true,
-) = BoutonNocturne(Secondaire, texte, onClick, modifier, icone, hauteur, forme, style, couleurTexte, tailleIcone, margeHorizontale, actif)
+    iconeAuDessus: Boolean = false,
+    couleurIcone: Color = couleurTexte,
+) = BoutonNocturne(
+    Secondaire, texte, onClick, modifier, icone, hauteur, forme, style, couleurTexte, tailleIcone, margeHorizontale, actif,
+    iconeAuDessus, couleurIcone,
+)
 
 /**
  * Action secondaire sans fond (« Annuler » des écrans 2a / 2c) : 52 dp en 16 / 500 neutre-200, contour séparateur.
@@ -121,6 +128,8 @@ private fun BoutonNocturne(
     tailleIcone: Dp,
     margeHorizontale: Dp,
     actif: Boolean,
+    iconeAuDessus: Boolean = false,
+    couleurIcone: Color = couleurTexte,
 ) {
     val interactions = remember { MutableInteractionSource() }
     val appuye by interactions.collectIsPressedAsState()
@@ -138,8 +147,15 @@ private fun BoutonNocturne(
         horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icone != null) Icone(icone, taille = tailleIcone, couleur = couleurTexte)
-        Text(texte, style = style, color = couleurTexte, textAlign = TextAlign.Center)
+        if (icone != null && iconeAuDessus) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Icone(icone, taille = tailleIcone, couleur = couleurIcone)
+                Text(texte, style = style, color = couleurTexte, textAlign = TextAlign.Center)
+            }
+        } else {
+            if (icone != null) Icone(icone, taille = tailleIcone, couleur = couleurIcone)
+            Text(texte, style = style, color = couleurTexte, textAlign = TextAlign.Center)
+        }
     }
 }
 

@@ -28,8 +28,11 @@ import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.EtatChrono.Etat
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.PalierEnCours
+import app.irontap.donnees.ValeursPalier
+import app.irontap.donnees.serieDeTest
 import app.irontap.logique.HistoriqueExercice
+import app.irontap.logique.LigneHistorique
 import app.irontap.logique.SeanceHistorique
 import app.irontap.logique.Suggestion
 import app.irontap.ui.theme.IronTapTheme
@@ -64,7 +67,7 @@ class SaisieCaptureTest {
 
     private val tirage = ExerciceAvecSeries(
         Exercice(1, 1, "Tirage vertical", 1),
-        listOf(Serie(1, 1, 1, 40.0, 15, t0)),
+        listOf(serieDeTest(1, 1, 1, 40.0, 15, t0)),
     )
 
     private open class SansAction : ActionsSaisie {
@@ -74,6 +77,7 @@ class SaisieCaptureTest {
         override fun ajouterAuPoids(valeur: Int) = Unit
         override fun ajouterAuxRepetitions(valeur: Int) = Unit
         override fun enregistrer(suite: Suite) = Unit
+        override fun degressive() = Unit
         override fun demanderFin() = Unit
         override fun annulerFin() = Unit
         override fun terminer(avecSerie: Boolean) = Unit
@@ -93,12 +97,13 @@ class SaisieCaptureTest {
         repetitions: String = "",
         hauteurVisible: Dp? = null,
         actions: ActionsSaisie = SansAction(),
+        paliersEnCours: List<PalierEnCours> = emptyList(),
     ) {
         compose.setContent {
             IronTapTheme {
                 Box(if (hauteurVisible != null) Modifier.height(hauteurVisible) else Modifier) {
                     ContenuSaisie(
-                        etat = EtatSaisie.EnCours(entrainement, exercices, chrono),
+                        etat = EtatSaisie.EnCours(entrainement, exercices, chrono, paliersEnCours),
                         formulaire = formulaire,
                         suggestions = suggestions,
                         historiqueDisponible = historiqueDisponible,
@@ -162,7 +167,7 @@ class SaisieCaptureTest {
 
     @Test
     fun dialogueAvecSerie() {
-        afficher(exercices = listOf(tirage), formulaire = Formulaire(dialogue = DialogueFin.AvecSerie(SerieSaisie("Tirage vertical", 45.0, 10))))
+        afficher(exercices = listOf(tirage), formulaire = Formulaire(dialogue = DialogueFin.AvecSerie(SerieSaisie("Tirage vertical", emptyList(), ValeursPalier(45.0, 10)))))
         compose.waitForIdle()
         captureScreenRoboImage()
     }
@@ -208,9 +213,11 @@ class SaisieCaptureTest {
         captureScreenRoboImage()
     }
 
+    private fun lignes(vararg principaux: String) = principaux.map { LigneHistorique(it) }
+
     private val developpe = ExerciceAvecSeries(
         Exercice(1, 1, "Développé couché", 1),
-        listOf(Serie(1, 1, 1, 50.0, 10, t0), Serie(2, 1, 2, 55.0, 8, t0)),
+        listOf(serieDeTest(1, 1, 1, 50.0, 10, t0), serieDeTest(2, 1, 2, 55.0, 8, t0)),
     )
 
     /** 3f : nom reconnu (deuxième exercice, nom encore éditable), bouton Historique accolé au champ. */
@@ -233,16 +240,19 @@ class SaisieCaptureTest {
     @Test
     fun historiqueOuvert() {
         val seances = listOf(
-            SeanceHistorique("Dos / biceps — 12/10/2026", listOf("15 × 40 kg", "12 × 45 kg", "10 × 45 kg")),
-            SeanceHistorique("Dos / biceps — 05/10/2026", listOf("15 × 40 kg", "12 × 40 kg", "10 × 45 kg")),
-            SeanceHistorique("Dos / biceps — 28/09/2026", listOf("12 × 40 kg", "10 × 42,5 kg", "8 × 45 kg")),
-            SeanceHistorique("24/09/2026", listOf("12 × 37,5 kg", "10 × 40 kg")),
-            SeanceHistorique("Dos / biceps — 21/09/2026", listOf("10 × 30 kg", "10 × 40 kg", "8 × 40 kg")),
-            SeanceHistorique("Dos / biceps — 14/09/2026", listOf("10 × 30 kg", "10 × 35 kg", "8 × 40 kg")),
+            SeanceHistorique(
+                "Dos / biceps — 12/10/2026",
+                lignes("15 × 40 kg", "12 × 45 kg") + LigneHistorique("10 × 45 kg", listOf("8 × 30 kg", "6 × 20 kg")),
+            ),
+            SeanceHistorique("Dos / biceps — 05/10/2026", lignes("15 × 40 kg", "12 × 40 kg", "10 × 45 kg")),
+            SeanceHistorique("Dos / biceps — 28/09/2026", lignes("12 × 40 kg", "10 × 42,5 kg", "8 × 45 kg")),
+            SeanceHistorique("24/09/2026", lignes("12 × 37,5 kg", "10 × 40 kg")),
+            SeanceHistorique("Dos / biceps — 21/09/2026", lignes("10 × 30 kg", "10 × 40 kg", "8 × 40 kg")),
+            SeanceHistorique("Dos / biceps — 14/09/2026", lignes("10 × 30 kg", "10 × 35 kg", "8 × 40 kg")),
         )
         val tirageEnCours = ExerciceAvecSeries(
             Exercice(2, 1, "Tirage vertical", 2),
-            listOf(Serie(3, 2, 1, 40.0, 15, t0), Serie(4, 2, 2, 45.0, 12, t0)),
+            listOf(serieDeTest(3, 2, 1, 40.0, 15, t0), serieDeTest(4, 2, 2, 45.0, 12, t0)),
         )
         var fermetures = 0
         afficher(
@@ -260,6 +270,9 @@ class SaisieCaptureTest {
         compose.onNode(hasScrollToIndexAction())
             .performScrollToNode(hasText("14/09/2026", substring = true))
         compose.onNode(hasText("14/09/2026", substring = true)).assertIsDisplayed()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("6 × 20 kg"))
+        compose.onNode(hasText("8 × 30 kg")).assertIsDisplayed()
+        compose.onNode(hasText("6 × 20 kg")).assertIsDisplayed()
         compose.onNode(isHeading() and hasText("Tirage vertical")).assertIsDisplayed()
 
         compose.onNode(hasContentDescription("Fermer"))
@@ -267,5 +280,45 @@ class SaisieCaptureTest {
             .assertHeightIsEqualTo(48.dp)
             .performClick()
         assertEquals(1, fermetures)
+    }
+
+    /** Tirage vertical, exercice 2, deux séries faites : la série 3 est en saisie (3·D). */
+    private val tirageSerie3 = ExerciceAvecSeries(
+        Exercice(2, 1, "Tirage vertical", 2),
+        listOf(serieDeTest(3, 2, 1, 40.0, 15, t0), serieDeTest(4, 2, 2, 45.0, 12, t0)),
+    )
+
+    private fun degressive(vararg paliers: Pair<Double?, Int>, poids: String, repetitions: String = "") = afficher(
+        exercices = listOf(developpe, tirageSerie3),
+        chrono = EtatChrono(1, Etat.EnCours, demarreA = 0),
+        poids = poids,
+        repetitions = repetitions,
+        paliersEnCours = paliers.mapIndexed { i, (p, r) -> PalierEnCours(i + 1L, 1, i + 1, p, r) },
+    )
+
+    /** 3·D A1 : 3ᵉ bouton « Dégressive » entre les deux actions. */
+    @Test
+    fun degressiveA1() {
+        degressive(poids = "50", repetitions = "10")
+        compose.onNode(hasClickAction() and hasText("Dégressive")).assertHeightIsEqualTo(72.dp)
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** 3·D A2 : palier 2 en saisie, palier 1 rappelé dans l'en-tête avec le badge. */
+    @Test
+    fun degressiveA2() {
+        degressive(50.0 to 10, poids = "30")
+        compose.onNode(hasText("50 kg × 10 ↓ …")).assertIsDisplayed()
+        compose.onNode(hasText("Exercice 2 · Série 3")).assertIsDisplayed()
+        compose.onNode(hasText("dégressive")).assertIsDisplayed()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** 3·D A3 : double dégressive, 3ᵉ palier en saisie. */
+    @Test
+    fun degressiveA3() {
+        degressive(50.0 to 10, 30.0 to 8, poids = "20")
+        compose.onNode(hasText("50 kg × 10 ↓ 30 kg × 8 ↓ …")).assertIsDisplayed()
+        compose.onRoot().captureRoboImage()
     }
 }

@@ -9,6 +9,7 @@ import app.irontap.donnees.BaseIronTap
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.Horloge
+import app.irontap.donnees.ValeursPalier
 import app.irontap.ui.ViewModelsDeTest
 import java.time.Instant
 import java.time.LocalDate
@@ -61,7 +62,7 @@ class DetailViewModelTest {
             dao.enregistrerSerie(id, "Tirage vertical", poids, reps, Suite.NouvelleSerie, Instant.EPOCH, 0)
         }
         dao.enregistrerSerie(id, "Tirage vertical", 45.0, 8, Suite.NouvelExercice, Instant.EPOCH, 0)
-        dao.supprimerSerie(dao.lireComplet(id)!!.exercices[0].series[3].id)
+        dao.supprimerSerie(dao.lireComplet(id)!!.exercices[0].series[3].serie.id)
         dao.enregistrerSerie(id, "Curl haltères", 12.0, 12, Suite.NouvelleSerie, Instant.EPOCH, 0)
         dao.terminer(id, Instant.EPOCH)
     }
@@ -86,23 +87,23 @@ class DetailViewModelTest {
 
     private suspend fun DetailViewModel.pret() = etat.attendre { it is EtatDetail.Pret } as EtatDetail.Pret
 
-    private suspend fun valeurs() = dao.lireComplet(id)!!.exercices.map { e -> e.exercice.nom to e.series.map { it.poidsKg to it.repetitions } }
+    private suspend fun valeurs() = dao.lireComplet(id)!!.exercices.map { e -> e.exercice.nom to e.series.map { it.valeurs.single().let { p -> p.poidsKg to p.repetitions } } }
 
     @Test
     fun `modifier une serie, pre-remplie, modifie_le renseigne`() = runTest {
         val vm = ecran()
         val tirage = vm.pret().complet.exercices[0]
         vm.ouvrirEdition(tirage.exercice, tirage.series[1])
-        assertEquals("45" to "12", vm.poids.text.toString() to vm.repetitions.text.toString())
+        assertEquals("45" to "12", vm.paliers.single().let { it.poids.text.toString() to it.repetitions.text.toString() })
 
         vm.ajouterAuPoids(5)
-        vm.repetitions.setTextAndPlaceCursorAtEnd("10")
+        vm.paliers.single().repetitions.setTextAndPlaceCursorAtEnd("10")
         vm.enregistrerEdition()
 
         vm.panneaux.attendre { it.edition == null }
         val serie = dao.lireComplet(id)!!.exercices[0].series[1]
-        assertEquals(50.0 to 10, serie.poidsKg to serie.repetitions)
-        assertEquals(horloge.maintenant(), serie.modifieLe)
+        assertEquals(listOf(ValeursPalier(50.0, 10)), serie.valeurs)
+        assertEquals(horloge.maintenant(), serie.serie.modifieLe)
     }
 
     @Test
@@ -110,16 +111,16 @@ class DetailViewModelTest {
         val vm = ecran()
         val curl = vm.pret().complet.exercices[1]
         vm.ouvrirEdition(curl.exercice, serie = null)
-        assertEquals("" to "", vm.poids.text.toString() to vm.repetitions.text.toString())
+        assertEquals("" to "", vm.paliers.single().let { it.poids.text.toString() to it.repetitions.text.toString() })
 
         vm.enregistrerEdition()
-        assertTrue(vm.panneaux.value.erreurRepetitions)
+        assertEquals(setOf(vm.paliers.single().cle), vm.panneaux.value.paliersEnErreur.keys)
         assertEquals(1, dao.lireComplet(id)!!.exercices[1].series.size)
 
         // L'erreur disparaît dès que le champ est modifié ; sans poids, c'est le poids du corps.
         vm.ajouterAuxRepetitions(10)
         Snapshot.sendApplyNotifications()
-        assertEquals(false, vm.panneaux.value.erreurRepetitions)
+        assertTrue(vm.panneaux.value.paliersEnErreur.isEmpty())
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
         assertEquals(listOf(12.0 to 12, null to 10), valeurs()[1].second)
@@ -137,12 +138,12 @@ class DetailViewModelTest {
         vm.demanderSuppression(tirage.exercice, tirage.series[1])
         vm.confirmerSuppression()
         // La ligne reste ouverte le temps que la série disparaisse, sans dialogue.
-        assertEquals(tirage.series[1].id, vm.panneaux.value.serieEnSuppression)
+        assertEquals(tirage.series[1].serie.id, vm.panneaux.value.serieEnSuppression)
         assertNull(vm.panneaux.value.suppression)
 
         val apres = vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.size == 2 } as EtatDetail.Pret
-        assertEquals(listOf(1, 2), apres.complet.exercices[0].series.map { it.ordre })
-        assertEquals(listOf(40.0 to 15, 45.0 to 10), apres.complet.exercices[0].series.map { it.poidsKg to it.repetitions })
+        assertEquals(listOf(1, 2), apres.complet.exercices[0].series.map { it.serie.ordre })
+        assertEquals(listOf(40.0 to 15, 45.0 to 10), apres.complet.exercices[0].series.map { it.valeurs.single().let { p -> p.poidsKg to p.repetitions } })
     }
 
     @Test
@@ -197,5 +198,116 @@ class DetailViewModelTest {
         assertEquals(false, vm.panneaux.value.suppressionEntrainement)
         vm.etat.attendre { it == EtatDetail.Introuvable }
         assertNull(dao.lireComplet(id))
+    }
+
+    // --- Édition d'une dégressive (7·D, spec §4.5.1) ---
+
+    private fun DetailViewModel.lignes() = paliers.map { it.poids.text.toString() to it.repetitions.text.toString() }
+
+    private suspend fun seriesTirage() = dao.lireComplet(id)!!.exercices[0].series.map { it.valeurs }
+
+    @Test
+    fun `degressive en tableau, modifier, ajouter et retirer des paliers, jamais le palier 1`() = runTest {
+        val vm = ecran()
+        val tirage = vm.pret().complet.exercices[0]
+        dao.modifierSerie(tirage.series[2].serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(20.0, 6)), horloge.maintenant())
+        val degressive = vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.size == 3 }
+            .let { (it as EtatDetail.Pret).complet.exercices[0].series[2] }
+
+        vm.ouvrirEdition(tirage.exercice, degressive)
+        assertEquals(true, vm.panneaux.value.edition?.tableau)
+        assertEquals(listOf("45" to "10", "30" to "8", "20" to "6"), vm.lignes())
+
+        // Le palier 1 ne se retire pas ; un palier dégressif, si.
+        vm.retirerPalier(vm.paliers[0].cle)
+        vm.retirerPalier(vm.paliers[1].cle)
+        assertEquals(listOf("45" to "10", "20" to "6"), vm.lignes())
+        vm.paliers[1].poids.setTextAndPlaceCursorAtEnd("22,5")
+        // Ligne ajoutée laissée vide : ignorée.
+        val ajoutee = vm.ajouterPalier()
+        assertEquals(ajoutee, vm.paliers.last().cle)
+        assertEquals("" to "", vm.lignes().last())
+        vm.ajouterPalier()
+        vm.paliers.last().repetitions.setTextAndPlaceCursorAtEnd("4")
+        vm.enregistrerEdition()
+
+        vm.panneaux.attendre { it.edition == null }
+        assertEquals(listOf(ValeursPalier(45.0, 10), ValeursPalier(22.5, 6), ValeursPalier(null, 4)), seriesTirage()[2])
+    }
+
+    @Test
+    fun `annuler l'edition d'une degressive ne change rien`() = runTest {
+        val vm = ecran()
+        val tirage = vm.pret().complet.exercices[0]
+        val paliers = listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(20.0, 6))
+        dao.modifierSerie(tirage.series[2].serie.id, paliers, horloge.maintenant())
+        val degressive = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.size == 3 }
+            as EtatDetail.Pret).complet.exercices[0].series[2]
+        val avant = seriesTirage()
+
+        vm.ouvrirEdition(tirage.exercice, degressive)
+        vm.retirerPalier(vm.paliers[1].cle)
+        vm.paliers[0].poids.setTextAndPlaceCursorAtEnd("99")
+        vm.ajouterPalier()
+        vm.paliers.last().repetitions.setTextAndPlaceCursorAtEnd("4")
+        vm.fermerEdition()
+        assertNull(vm.panneaux.value.edition)
+
+        // Témoin : les écritures du ViewModel s'enchaînent, une écriture lancée par Annuler serait passée avant.
+        vm.ouvrirRenommage(tirage.exercice)
+        vm.nom.setTextAndPlaceCursorAtEnd("Tirage poitrine")
+        vm.renommer()
+        vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.exercice?.nom == "Tirage poitrine" }
+        assertEquals(avant, seriesTirage())
+
+        // Rouverte, la feuille retrouve les paliers enregistrés.
+        vm.ouvrirEdition(tirage.exercice, degressive)
+        assertEquals(listOf("45" to "10", "30" to "8", "20" to "6"), vm.lignes())
+    }
+
+    @Test
+    fun `serie simple passee en degressive, puis revenue simple en retirant ses paliers`() = runTest {
+        val vm = ecran()
+        val tirage = vm.pret().complet.exercices[0]
+        vm.ouvrirEdition(tirage.exercice, tirage.series[0])
+        assertEquals(false, vm.panneaux.value.edition?.tableau)
+
+        vm.ajouterPalier()
+        assertEquals(true, vm.panneaux.value.edition?.tableau)
+        vm.paliers[1].poids.setTextAndPlaceCursorAtEnd("30")
+        vm.paliers[1].repetitions.setTextAndPlaceCursorAtEnd("8")
+        vm.enregistrerEdition()
+        vm.panneaux.attendre { it.edition == null }
+        assertEquals(listOf(ValeursPalier(40.0, 15), ValeursPalier(30.0, 8)), seriesTirage()[0])
+
+        val degressive = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(0)?.paliers?.size == 2 }
+            as EtatDetail.Pret).complet.exercices[0].series[0]
+        vm.ouvrirEdition(tirage.exercice, degressive)
+        vm.retirerPalier(vm.paliers[1].cle)
+        vm.enregistrerEdition()
+        vm.panneaux.attendre { it.edition == null }
+        assertEquals(listOf(ValeursPalier(40.0, 15)), seriesTirage()[0])
+    }
+
+    @Test
+    fun `repetitions manquantes sur un palier, signalees jusqu'a ce que le champ change`() = runTest {
+        val vm = ecran()
+        val tirage = vm.pret().complet.exercices[0]
+        val avant = seriesTirage()
+        vm.ouvrirEdition(tirage.exercice, tirage.series[1])
+        vm.ajouterPalier()
+        val fautif = vm.paliers[1]
+        fautif.poids.setTextAndPlaceCursorAtEnd("30")
+        vm.enregistrerEdition()
+
+        assertEquals(setOf(fautif.cle), vm.panneaux.value.paliersEnErreur.keys)
+        assertEquals(avant, seriesTirage())
+        // Une autre ligne modifiée ne fait pas disparaître l'erreur ; la ligne fautive, si.
+        vm.paliers[0].repetitions.setTextAndPlaceCursorAtEnd("11")
+        Snapshot.sendApplyNotifications()
+        assertEquals(setOf(fautif.cle), vm.panneaux.value.paliersEnErreur.keys)
+        fautif.repetitions.setTextAndPlaceCursorAtEnd("8")
+        Snapshot.sendApplyNotifications()
+        assertTrue(vm.panneaux.value.paliersEnErreur.isEmpty())
     }
 }

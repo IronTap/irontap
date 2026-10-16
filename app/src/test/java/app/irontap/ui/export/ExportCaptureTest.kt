@@ -6,7 +6,7 @@ import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.serieDeTest
 import app.irontap.logique.FormatExport
 import app.irontap.ui.accueil.ActionsAccueil
 import app.irontap.ui.accueil.ContenuAccueil
@@ -40,9 +40,9 @@ class ExportCaptureTest {
         listOf(
             ExerciceAvecSeries(
                 Exercice(1, 1, "Tirage vertical", 1),
-                listOf(40.0 to 15, 45.0 to 12, 45.0 to 10).mapIndexed { i, (p, r) -> Serie(i + 1L, 1, i + 1, p, r, t0) },
+                listOf(40.0 to 15, 45.0 to 12, 45.0 to 10).mapIndexed { i, (p, r) -> serieDeTest(i + 1L, 1, i + 1, p, r, t0) },
             ),
-            ExerciceAvecSeries(Exercice(2, 1, "Curl haltères", 2), listOf(Serie(9, 2, 1, 12.5, 12, t0))),
+            ExerciceAvecSeries(Exercice(2, 1, "Curl haltères", 2), listOf(serieDeTest(9, 2, 1, 12.5, 12, t0))),
         ),
     )
 

@@ -3,7 +3,7 @@ package app.irontap.ui.saisie
 import app.irontap.donnees.Entrainement
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.serieDeTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -18,7 +18,7 @@ class EtatSaisieTest {
 
     private fun exercice(ordre: Int, series: Int) = ExerciceAvecSeries(
         Exercice(ordre.toLong(), 1, "Exercice $ordre", ordre),
-        List(series) { Serie(it.toLong(), ordre.toLong(), it + 1, null, 10, t0) },
+        List(series) { serieDeTest(it.toLong(), ordre.toLong(), it + 1, null, 10, t0) },
     )
 
     private fun etat(vararg exercices: ExerciceAvecSeries, nouvelExercice: Boolean = false) =

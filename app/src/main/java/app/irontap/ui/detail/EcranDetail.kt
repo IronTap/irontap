@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -71,9 +72,9 @@ import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.SerieAvecPaliers
 import app.irontap.logique.Suggestion
-import app.irontap.logique.decrireSerie
+import app.irontap.logique.decrirePalier
 import app.irontap.logique.formaterDate
 import app.irontap.ui.composants.BoutonContour
 import app.irontap.ui.composants.BoutonPrincipal
@@ -84,6 +85,7 @@ import app.irontap.ui.composants.DialogueNocturne
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.ListeSuggestions
 import app.irontap.ui.composants.MessageErreur
+import app.irontap.ui.composants.PaliersEmpiles
 import app.irontap.ui.export.ExportViewModel
 import app.irontap.ui.export.FeuilleExport
 import app.irontap.ui.theme.Couleurs
@@ -99,9 +101,9 @@ interface NavigationDetail {
 
 /** Gestes sur le contenu du détail, implémentés par [DetailViewModel] (via [EcranDetail]). */
 interface ActionsDetail {
-    fun modifierSerie(exercice: Exercice, serie: Serie)
+    fun modifierSerie(exercice: Exercice, serie: SerieAvecPaliers)
     fun ajouterSerie(exercice: Exercice)
-    fun supprimerSerie(exercice: Exercice, serie: Serie)
+    fun supprimerSerie(exercice: Exercice, serie: SerieAvecPaliers)
     fun renommer(exercice: Exercice)
 }
 
@@ -120,28 +122,33 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
     var exporter by rememberSaveable { mutableStateOf(false) }
     ContenuDetail(
         complet = pret.complet,
-        serieRevelee = panneaux.suppression?.serie?.id ?: panneaux.serieEnSuppression,
+        serieRevelee = panneaux.suppression?.serie?.serie?.id ?: panneaux.serieEnSuppression,
         navigation = navigation,
         onExporter = { exporter = true },
         onSupprimerEntrainement = vm::demanderSuppressionEntrainement,
         actions = object : ActionsDetail {
-            override fun modifierSerie(exercice: Exercice, serie: Serie) = vm.ouvrirEdition(exercice, serie)
+            override fun modifierSerie(exercice: Exercice, serie: SerieAvecPaliers) = vm.ouvrirEdition(exercice, serie)
             override fun ajouterSerie(exercice: Exercice) = vm.ouvrirEdition(exercice, serie = null)
-            override fun supprimerSerie(exercice: Exercice, serie: Serie) = vm.demanderSuppression(exercice, serie)
+            override fun supprimerSerie(exercice: Exercice, serie: SerieAvecPaliers) = vm.demanderSuppression(exercice, serie)
             override fun renommer(exercice: Exercice) = vm.ouvrirRenommage(exercice)
         },
     )
     FeuilleEdition(
         edition = panneaux.edition,
-        poids = vm.poids,
-        repetitions = vm.repetitions,
-        erreurRepetitions = panneaux.erreurRepetitions,
+        paliers = vm.paliers,
+        paliersEnErreur = panneaux.paliersEnErreur.keys,
         erreurEnregistrement = panneaux.erreurEnregistrement,
         actions = object : ActionsEdition {
-            override fun ajouterAuPoids(valeur: Int) = vm.ajouterAuPoids(valeur)
-            override fun ajouterAuxRepetitions(valeur: Int) = vm.ajouterAuxRepetitions(valeur)
+            override fun ajouterAuPoids(valeur: Int) {
+                vm.ajouterAuPoids(valeur)
+            }
+            override fun ajouterAuxRepetitions(valeur: Int) {
+                vm.ajouterAuxRepetitions(valeur)
+            }
+            override fun ajouterPalier() = vm.ajouterPalier()
+            override fun retirerPalier(cle: Long) = vm.retirerPalier(cle)
             override fun enregistrer() = vm.enregistrerEdition()
-            override fun supprimer(exercice: Exercice, serie: Serie) = vm.demanderSuppression(exercice, serie)
+            override fun supprimer(exercice: Exercice, serie: SerieAvecPaliers) = vm.demanderSuppression(exercice, serie)
             override fun fermer() = vm.fermerEdition()
         },
     )
@@ -356,10 +363,10 @@ private fun BlocExercice(bloc: ExerciceAvecSeries, serieRevelee: Long?, actions:
                 .background(Couleurs.Surface),
         ) {
             bloc.series.forEach { serie ->
-                key(serie.id) {
+                key(serie.serie.id) {
                     LigneSerie(
                         serie = serie,
-                        revelee = serie.id == serieRevelee,
+                        revelee = serie.serie.id == serieRevelee,
                         onModifier = { actions.modifierSerie(exercice, serie) },
                         onSupprimer = { actions.supprimerSerie(exercice, serie) },
                     )
@@ -381,12 +388,13 @@ private enum class Glisse { Fermee, Ouverte }
 private val LargeurSuppression = 96.dp
 
 /**
- * Ligne de série de 54 dp : numéro, valeur 20 / 500, chevron. Balayée vers la gauche, elle laisse apparaître la zone
- * « Supprimer » (96 dp, rouge sombre) et demande confirmation ; elle reste ouverte tant que le dialogue
- * est affiché ([revelee]), puis se referme si la suppression est annulée.
+ * Ligne de série, 54 dp au moins : numéro (calé en haut), valeur 20 / 500, chevron ; les paliers d'une dégressive
+ * s'empilent sous la valeur (6a), la ligne grandit. Balayée vers la gauche, elle laisse apparaître la zone
+ * « Supprimer » (96 dp, rouge sombre) et demande confirmation pour la série entière ; elle reste ouverte tant
+ * que le dialogue est affiché ([revelee]), puis se referme si la suppression est annulée.
  */
 @Composable
-private fun LigneSerie(serie: Serie, revelee: Boolean, onModifier: () -> Unit, onSupprimer: () -> Unit) {
+private fun LigneSerie(serie: SerieAvecPaliers, revelee: Boolean, onModifier: () -> Unit, onSupprimer: () -> Unit) {
     val largeur = with(LocalDensity.current) { LargeurSuppression.toPx() }
     val glisse = remember {
         AnchoredDraggableState(
@@ -410,7 +418,6 @@ private fun LigneSerie(serie: Serie, revelee: Boolean, onModifier: () -> Unit, o
     Box(
         Modifier
             .fillMaxWidth()
-            .height(54.dp)
             .filetHaut()
             .padding(top = 1.dp)
             .anchoredDraggable(
@@ -423,24 +430,28 @@ private fun LigneSerie(serie: Serie, revelee: Boolean, onModifier: () -> Unit, o
             },
     ) {
         if (decalage < 0f) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(LargeurSuppression)
-                    .background(Couleurs.FondSuppression)
-                    .clickable(role = Role.Button, onClick = onSupprimer),
-                verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icone(R.drawable.ic_trash, taille = 18.dp, couleur = Couleurs.TexteSuppression)
-                Text("Supprimer", style = Typo.Petit, color = Couleurs.TexteSuppression)
+            // Hauteur de la ligne, qui grandit avec les paliers d'une dégressive.
+            Box(Modifier.matchParentSize()) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(LargeurSuppression)
+                        .background(Couleurs.FondSuppression)
+                        .clickable(role = Role.Button, onClick = onSupprimer),
+                    verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icone(R.drawable.ic_trash, taille = 18.dp, couleur = Couleurs.TexteSuppression)
+                    Text("Supprimer", style = Typo.Petit, color = Couleurs.TexteSuppression)
+                }
             }
         }
         // La ligne se raccourcit à mesure que la zone « Supprimer » apparaît : sa valeur reste lisible (6b).
         Row(
             modifier = Modifier
-                .fillMaxHeight()
+                // 54 dp avec le filet du haut.
+                .heightIn(min = 53.dp)
                 .layout { mesurable, contraintes ->
                     val largeurLigne = (contraintes.maxWidth + decalage.roundToInt()).coerceAtLeast(0)
                     val ligne = mesurable.measure(contraintes.copy(minWidth = largeurLigne, maxWidth = largeurLigne))
@@ -448,12 +459,21 @@ private fun LigneSerie(serie: Serie, revelee: Boolean, onModifier: () -> Unit, o
                 }
                 .background(if (decalage < 0f || appuye) Couleurs.Neutre800 else Couleurs.Surface)
                 .clickable(interactions, indication = null, role = Role.Button, onClick = onModifier)
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("${serie.ordre}", style = Typo.Corps, color = Couleurs.Neutre500, modifier = Modifier.width(18.dp))
-            Text(decrireSerie(serie.poidsKg, serie.repetitions), style = Typo.TitreEntete, color = Couleurs.Texte, modifier = Modifier.weight(1f))
+            Text(
+                "${serie.serie.ordre}",
+                style = Typo.Corps,
+                color = Couleurs.Neutre500,
+                modifier = Modifier
+                    .align(Alignment.Top)
+                    .padding(top = 4.dp)
+                    .width(18.dp),
+            )
+            val textes = serie.paliers.map { decrirePalier(it.poidsKg, it.repetitions) }
+            PaliersEmpiles(textes.firstOrNull().orEmpty(), textes.drop(1), Typo.TitreEntete, Modifier.weight(1f))
             if (decalage == 0f) Icone(R.drawable.ic_caret_right, taille = 16.dp, couleur = Couleurs.Neutre600)
         }
     }
@@ -518,7 +538,7 @@ internal fun DialogueSuppressionSerie(
     onAnnuler: () -> Unit,
     onSupprimer: () -> Unit,
 ) {
-    val serie = suppression.serie
+    val serie = suppression.serie.serie
     DialogueNocturne(titre = "Supprimer la série ${serie.ordre} ?", onFermer = onAnnuler) {
         Text(
             text = buildAnnotatedString {

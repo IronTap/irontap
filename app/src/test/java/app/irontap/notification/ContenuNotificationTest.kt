@@ -6,7 +6,7 @@ import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.EtatChrono.Etat
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.serieDeTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -22,7 +22,7 @@ class ContenuNotificationTest {
 
     private val tirage = ExerciceAvecSeries(
         Exercice(1, 1, "Tirage vertical", 1),
-        List(2) { Serie(it.toLong(), 1, it + 1, 40.0, 12, t0) },
+        List(2) { serieDeTest(it.toLong(), 1, it + 1, 40.0, 12, t0) },
     )
 
     private fun enCours(chrono: EtatChrono?, nouvelExercice: Boolean = false, vararg exercices: ExerciceAvecSeries) =

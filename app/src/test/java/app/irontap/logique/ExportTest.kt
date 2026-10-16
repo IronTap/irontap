@@ -4,7 +4,7 @@ import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
-import app.irontap.donnees.Serie
+import app.irontap.donnees.serieDeTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.Instant
@@ -14,9 +14,14 @@ class ExportTest {
 
     private val t0 = Instant.parse("2026-10-12T17:00:00Z")
 
+    private fun degressive(ordre: Int, nom: String, vararg paliers: Pair<Double?, Int>) = ExerciceAvecSeries(
+        Exercice(ordre.toLong(), 1, nom, ordre),
+        listOf(serieDeTest(1, ordre.toLong(), 1, paliers[0].first, paliers[0].second, t0, *paliers.drop(1).toTypedArray())),
+    )
+
     private fun exercice(ordre: Int, nom: String, vararg series: Pair<Double?, Int>) = ExerciceAvecSeries(
         Exercice(ordre.toLong(), 1, nom, ordre),
-        series.mapIndexed { i, (poids, reps) -> Serie(0, ordre.toLong(), i + 1, poids, reps, t0) },
+        series.mapIndexed { i, (poids, reps) -> serieDeTest(0, ordre.toLong(), i + 1, poids, reps, t0) },
     )
 
     private fun entrainement(date: LocalDate, libelle: String?, vararg exercices: ExerciceAvecSeries) =
@@ -60,15 +65,28 @@ class ExportTest {
     }
 
     @Test
-    fun `csv une ligne par serie, point decimal, poids vide au poids du corps`() {
+    fun `csv une ligne par palier, point decimal, poids vide au poids du corps`() {
         val tractions = entrainement(LocalDate.of(2026, 10, 9), null, exercice(1, "Tractions", null to 8))
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;poids_kg;repetitions\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;40;15\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;2;45;12\r\n" +
-                "2026-10-12;Dos / biceps;Curl haltères;2;1;12.5;12\r\n" +
-                "2026-10-09;;Tractions;1;1;;8\r\n",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;45;12\r\n" +
+                "2026-10-12;Dos / biceps;Curl haltères;2;1;1;12.5;12\r\n" +
+                "2026-10-09;;Tractions;1;1;1;;8\r\n",
             exporterCsv(listOf(dos, tractions)),
+        )
+    }
+
+    @Test
+    fun `degressive, paliers sur la meme ligne en texte, une ligne par palier en csv`() {
+        val seance = entrainement(LocalDate.of(2026, 10, 12), null, degressive(1, "Tirage vertical", 45.0 to 10, 30.0 to 8, null to 6))
+        assertEquals("Lun. 12 oct. 2026\n\nTirage vertical\n  45 kg × 10 ↓ 30 kg × 8 ↓ PDC × 6\n", exporterTexte(listOf(seance)))
+        assertEquals(
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;1;45;10\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;2;30;8\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;3;;6\r\n",
+            exporterCsv(listOf(seance)),
         )
     }
 
@@ -103,8 +121,8 @@ class ExportTest {
             apercuExport(exporterTexte(listOf(dos))),
         )
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;poids_kg;repetitions\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;40;15",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15",
             apercuExport(exporterCsv(listOf(dos)), lignes = 2),
         )
         // Pas de ligne vide finale.

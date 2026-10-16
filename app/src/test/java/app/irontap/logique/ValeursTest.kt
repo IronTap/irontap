@@ -1,5 +1,6 @@
 package app.irontap.logique
 
+import app.irontap.donnees.ValeursPalier
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -57,7 +58,9 @@ class ValeursTest {
         assertEquals("12,5", formaterPoids(12.5))
         assertEquals("41,25", formaterPoids(41.25))
         assertEquals("0", formaterPoids(0.0))
-        assertEquals("40 kg × 15", decrireSerie(40.0, 15))
-        assertEquals("PDC × 12", decrireSerie(null, 12))
+        assertEquals("40 kg × 15", decrirePalier(40.0, 15))
+        assertEquals("PDC × 12", decrirePalier(null, 12))
+        assertEquals("40 kg × 15", decrireSerie(listOf(ValeursPalier(40.0, 15))))
+        assertEquals("50 kg × 10 ↓ 30 kg × 8 ↓ PDC × 6", decrireSerie(listOf(ValeursPalier(50.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6))))
     }
 }

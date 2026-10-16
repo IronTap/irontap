@@ -47,8 +47,8 @@ data class Exercice(
 )
 
 /**
- * Une exécution d'un exercice. [ordre] commence à 1.
- * [poidsKg] vide = poids du corps ; les multiples de 0,25 sont exacts en `Double`.
+ * Une exécution d'un exercice. [ordre] commence à 1. Ses poids et répétitions sont dans ses [Palier] :
+ * un seul pour une série simple, plusieurs pour une dégressive (spec §6, v1.4).
  */
 @Entity(
     tableName = "serie",
@@ -66,11 +66,66 @@ data class Serie(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "exercice_id") val exerciceId: Long,
     val ordre: Int,
-    @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
-    val repetitions: Int,
     @ColumnInfo(name = "cree_le") val creeLe: Instant,
     @ColumnInfo(name = "modifie_le") val modifieLe: Instant? = null,
 )
+
+/**
+ * Un couple poids × répétitions d'une série. [ordre] commence à 1 (palier principal) ; les suivants sont
+ * les paliers dégressifs, enchaînés sans repos. [poidsKg] vide = poids du corps ; les multiples de 0,25
+ * sont exacts en `Double`.
+ */
+@Entity(
+    tableName = "palier",
+    foreignKeys = [
+        ForeignKey(
+            entity = Serie::class,
+            parentColumns = ["id"],
+            childColumns = ["serie_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("serie_id")],
+)
+data class Palier(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "serie_id") val serieId: Long,
+    val ordre: Int,
+    @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
+    val repetitions: Int,
+) {
+    val valeurs get() = ValeursPalier(poidsKg, repetitions)
+}
+
+/**
+ * Palier d'une dégressive en cours de saisie (spec §4.3.9) : gardé par « Dégressive », pas encore une série.
+ * En base pour être retrouvé si l'appli est tuée ; « Nouvelle série » ou « Nouvel exercice » le versent dans
+ * la série enregistrée, la fin de l'entraînement le supprime.
+ */
+@Entity(
+    tableName = "palier_en_cours",
+    foreignKeys = [
+        ForeignKey(
+            entity = Entrainement::class,
+            parentColumns = ["id"],
+            childColumns = ["entrainement_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("entrainement_id")],
+)
+data class PalierEnCours(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "entrainement_id") val entrainementId: Long,
+    val ordre: Int,
+    @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
+    val repetitions: Int,
+) {
+    val valeurs get() = ValeursPalier(poidsKg, repetitions)
+}
+
+/** Poids et répétitions d'un palier, hors base (saisie, édition, affichage). [poidsKg] vide = poids du corps. */
+data class ValeursPalier(val poidsKg: Double?, val repetitions: Int)
 
 /**
  * Chrono de repos de l'entraînement en cours (spec §4.3.4 et §6), supprimé à la fin de l'entraînement.
@@ -117,11 +172,20 @@ data class EtatChrono(
     fun relance(realtime: Long): EtatChrono = copy(etat = Etat.EnCours, demarreA = realtime, cumulMs = 0)
 }
 
+/** Une série et ses paliers, triés par [Palier.ordre] : le premier est le palier principal. */
+data class SerieAvecPaliers(
+    @Embedded val serie: Serie,
+    @Relation(parentColumn = "id", entityColumn = "serie_id")
+    val paliers: List<Palier>,
+) {
+    val valeurs get() = paliers.map { it.valeurs }
+}
+
 /** Un exercice et ses séries, triées par [Serie.ordre]. */
 data class ExerciceAvecSeries(
     @Embedded val exercice: Exercice,
-    @Relation(parentColumn = "id", entityColumn = "exercice_id")
-    val series: List<Serie>,
+    @Relation(entity = Serie::class, parentColumn = "id", entityColumn = "exercice_id")
+    val series: List<SerieAvecPaliers>,
 )
 
 /** Un entraînement, ses exercices et leurs séries, triés par ordre (détail, export). */
@@ -138,23 +202,29 @@ data class EntrainementEnCours(
     val exercices: List<ExerciceAvecSeries>,
     @Relation(parentColumn = "id", entityColumn = "entrainement_id")
     val chrono: EtatChrono?,
+    /** Paliers d'une dégressive gardés par « Dégressive », triés par [PalierEnCours.ordre]. */
+    @Relation(parentColumn = "id", entityColumn = "entrainement_id")
+    val paliersEnCours: List<PalierEnCours> = emptyList(),
 )
 
-/** Une série passée d'un exercice, avec sa séance (historique de l'exercice, spec §4.3.8). */
+/** Un palier d'une série passée d'un exercice, avec sa série et sa séance (historique de l'exercice, spec §4.3.8). */
 data class SerieHistorique(
     @ColumnInfo(name = "entrainement_id") val entrainementId: Long,
     val date: LocalDate,
     val libelle: String?,
     val nom: String,
+    @ColumnInfo(name = "serie_id") val serieId: Long,
     @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
     val repetitions: Int,
 )
 
 /** Room ne garantit pas l'ordre des relations : on trie après lecture. */
-internal fun ExerciceAvecSeries.trie() = copy(series = series.sortedBy { it.ordre })
+internal fun SerieAvecPaliers.trie() = copy(paliers = paliers.sortedBy { it.ordre })
+
+internal fun ExerciceAvecSeries.trie() = copy(series = series.sortedBy { it.serie.ordre }.map { it.trie() })
 
 internal fun List<ExerciceAvecSeries>.trie() = sortedBy { it.exercice.ordre }.map { it.trie() }
 
 internal fun EntrainementComplet.trie() = copy(exercices = exercices.trie())
 
-internal fun EntrainementEnCours.trie() = copy(exercices = exercices.trie())
+internal fun EntrainementEnCours.trie() = copy(exercices = exercices.trie(), paliersEnCours = paliersEnCours.sortedBy { it.ordre })
