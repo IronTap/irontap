@@ -44,3 +44,23 @@ internal object Migration1Vers2 : Migration(1, 2) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_palier_en_cours_entrainement_id` ON `palier_en_cours` (`entrainement_id`)")
     }
 }
+
+/**
+ * v2 → v3 (supersets, spec §6 v1.6) : rôle de superset des exercices, onglet des paliers gardés, et superset
+ * en cours de saisie. Les colonnes ajoutées sont vides pour l'existant : aucun exercice n'est en superset.
+ */
+internal object Migration2Vers3 : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `exercice` ADD COLUMN `superset_id` TEXT")
+        db.execSQL("ALTER TABLE `exercice` ADD COLUMN `superset_role` TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_exercice_superset_id` ON `exercice` (`superset_id`)")
+        db.execSQL("ALTER TABLE `palier_en_cours` ADD COLUMN `role` TEXT")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `superset_en_cours` (`entrainement_id` INTEGER NOT NULL, `superset_id` TEXT NOT NULL, " +
+                "`nom_a` TEXT NOT NULL, `nom_b` TEXT NOT NULL, `actif` TEXT NOT NULL, `poids_a` TEXT NOT NULL, " +
+                "`repetitions_a` TEXT NOT NULL, `poids_b` TEXT NOT NULL, `repetitions_b` TEXT NOT NULL, " +
+                "PRIMARY KEY(`entrainement_id`), " +
+                "FOREIGN KEY(`entrainement_id`) REFERENCES `entrainement`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        )
+    }
+}

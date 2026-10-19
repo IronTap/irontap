@@ -35,6 +35,9 @@ ICONS = {
     # Flèche des dégressives : trait 20 à 18 dp (bouton), 24 aux petites tailles (11–15 dp), comme les maquettes.
     'arrow_down': ('<line x1="128" y1="40" x2="128" y2="216"/><polyline points="56 144 128 216 200 144"/>', 20),
     'arrow_down_small': ('<line x1="128" y1="40" x2="128" y2="216"/><polyline points="56 144 128 216 200 144"/>', 24),
+    # Superset : trait 20 à 14 dp (pastille, feuille), 24 aux petites tailles (11–12 dp), comme les maquettes.
+    'link_simple': ('<path d="M141.5 165.4l-21.9 21.9a44 44 0 0 1-62.2-62.2l21.9-21.9"/><path d="M114.5 90.6l21.9-21.9a44 44 0 0 1 62.2 62.2l-21.9 21.9"/><line x1="100" y1="156" x2="156" y2="100"/>', 20),
+    'link_simple_small': ('<path d="M141.5 165.4l-21.9 21.9a44 44 0 0 1-62.2-62.2l21.9-21.9"/><path d="M114.5 90.6l21.9-21.9a44 44 0 0 1 62.2 62.2l-21.9 21.9"/><line x1="100" y1="156" x2="156" y2="100"/>', 24),
     'lock': ('<rect x="40" y="88" width="176" height="128" rx="8"/><path d="M92 88V52a36 36 0 0 1 72 0v36"/>', 16),
     'flag': ('<line x1="48" y1="224" x2="48" y2="48"/><path d="M48 168c64-56 96 56 160 0V48c-64 56-96-56-160 0"/>', 16),
     'calendar': ('<rect x="40" y="40" width="176" height="176" rx="8"/><line x1="176" y1="24" x2="176" y2="56"/><line x1="80" y1="24" x2="80" y2="56"/><line x1="40" y1="88" x2="216" y2="88"/>', 16),

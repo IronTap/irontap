@@ -1,6 +1,6 @@
 # IronTap — Décisions techniques
 
-Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives).
+Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives), puis `handoff_superset/` (spec v1.7, supersets).
 
 ## Principes
 
@@ -21,7 +21,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 | Injection de dépendances | Aucune bibliothèque : conteneur manuel dans `Application` |
 | Dates | `java.time`, locale `fr` (« Lun. 12 oct. 2026 ») |
 | Police | Inter, fichiers TTF embarqués dans `res/font` (pas de polices téléchargeables, elles passent par le réseau) |
-| Icônes | Phosphor, exportées en vector drawables (22 icônes, aucune dépendance ; flèche des dégressives en deux épaisseurs comme les maquettes ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
+| Icônes | Phosphor, exportées en vector drawables (24 icônes, aucune dépendance ; flèche des dégressives et lien des supersets en deux épaisseurs comme les maquettes ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
 | Export | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` ; texte et CSV générés à la main |
 | Build | Gradle Kotlin DSL + version catalog |
 | Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, autocomplétion sans accents) + Room en mémoire |
@@ -63,6 +63,8 @@ Spec §6, avec ces précisions :
 - Dates en texte ISO (`2026-10-12`), horodatages en millisecondes ; poids en `REAL` (les multiples de 0,25 sont exacts en binaire).
 - Schéma exporté dans `app/schemas/` et versionné : toute modification après la première installation demande une migration.
 - **v2 (séries dégressives, spec v1.4)** : poids et répétitions passent de `Serie` à la table `Palier` (1 = palier principal). Migration manuelle `Migration1Vers2` : chaque série existante reçoit son palier 1, puis `serie` est recréée sans ces colonnes (SQLite d'Android 8 ne sait pas en supprimer). Les clés étrangères restant actives pendant la migration, les valeurs transitent par une table temporaire : supprimer l'ancienne `serie` effacerait sinon en cascade les paliers déjà créés. Test : une base v1 créée depuis `schemas/…/1.json`, ouverte par Room, qui valide le schéma v2.
+- **v3 (supersets, spec v1.6)** : `Exercice.superset_id` (UUID partagé) et `superset_role` (A | B), `palier_en_cours.role` (onglet d'un superset), table `superset_en_cours`. Migration `Migration2Vers3` par ajout de colonnes, vides pour l'existant ; test depuis `schemas/…/2.json`.
+- **Tours d'un superset** : le numéro d'une série de A ou de B (`Serie.ordre`) est celui de son tour, pas de colonne de plus. Supprimer la série de A d'un tour où B en a une ne renumérote rien ; un tour devenu vide disparaît et les tours suivants sont renumérotés pour A et B. Les numéros d'un exercice peuvent donc sauter (A : 1, 3), ce qui ne se voit qu'à l'export CSV (`ordre_serie`, format inchangé hors périmètre). Un exercice resté seul (l'autre supprimé, ou un premier tour avec A seul) redevient ordinaire, ses séries renumérotées à la suite.
 - **`PalierEnCours`** (ajout) : les paliers gardés par « Dégressive » sont en base, pas dans le brouillon en mémoire, pour être retrouvés si l'appli est tuée (critère du handoff). La série elle-même n'est créée qu'à « Nouvelle série » / « Nouvel exercice », avec tous ses paliers : numérotation, notification et accueil ne voient jamais de série incomplète.
 
 ## Écrans
@@ -86,6 +88,20 @@ Spec §6, avec ces précisions :
   - Dialogue 4a : avec des paliers gardés, il propose la série même si les champs sont vides ; le palier courant s'y ajoute s'il est valide.
   - « Terminer l'entraînement en cours ? » depuis l'accueil abandonne une dégressive en attente, comme les champs non enregistrés.
 - **Édition d'une dégressive** (7·D, spec §4.5.1) : une fois en tableau (dégressive, ou « + Ajouter un palier » depuis l'écran 7), la feuille y reste jusqu'à sa fermeture, même si tous les paliers dégressifs sont retirés : pas de changement de mise en page sous le doigt. L'écran 7 garde son libellé « Supprimer » ; le tableau dit « Supprimer la série ». Erreur de répétitions : bordure sur chaque champ fautif et message sous le tableau ; une ligne sans aucune valeur est ignorée, et si toutes sont vides c'est la première qui est signalée.
+- **Superset — saisie** (S1–S5, spec §4.3.10) :
+  - Les exercices A et B ne sont créés qu'au premier tour enregistré, A puis B, pour garantir leur ordre : « Dégressive » sur un onglet garde le palier et mémorise son nom (verrouillé), sans créer l'exercice.
+  - **Survie à un kill** : noms, onglet actif et valeurs saisies des deux onglets sont mémorisés en base à chaque bascule d'onglet et quand l'écran passe en arrière-plan (`ON_STOP`), le moment où Android peut tuer l'appli. Hors superset, les champs restent en mémoire comme avant (spec §7).
+  - « Exercice N » compte un superset comme un seul exercice (prototype : A et B affichent le même N).
+  - Toasts : « Série k enregistrée · A … · B … », « … · A seul · … » (« Nouvel exercice » avec un onglet vide, prototype), « Superset terminé » si les deux étaient vides. Pour sortir d'un superset commencé par erreur : « Nouvel exercice » avec les onglets vides.
+  - Un onglet compte comme saisi pour le dialogue de fin s'il a un nom et des répétitions valides, ou des paliers gardés.
+  - Autocomplétion sur l'onglet actif modifiable : la liste s'affiche sous les deux onglets, sur toute leur largeur.
+  - Ligne de la notification et du bandeau de l'accueil : « Élévations latérales + Curl marteau · Série 2 ».
+  - Pastilles de 36 dp comme la maquette, dans une zone tactile de 48 dp.
+- **Superset — détail** (H, 3·S+ T1) :
+  - Appui sur le numéro d'un tour : « Modifier le tour N » (la maquette ne dit pas comment l'ouvrir). Le palier principal saisi remplace celui de la série, ses paliers dégressifs sont gardés ; un bloc vidé ne change pas la série (la supprimer passe par « Supprimer le tour »).
+  - Indications d'« Ajouter un tour » : la dernière série de chaque exercice (maquette T1 : B reprend le tour 3 quand le tour 4 n'a pas de B).
+  - Renommer : appui sur le nom de A ou de B dans l'en-tête de la carte (pas de crayon sur la maquette).
+  - « Supprimer le tour N ? » : choix destructifs empilés, rappel des séries de A et B.
 - Feuilles du bas sans ombre lg : avec la feuille Material, l'ombre serait dessinée en haut de l'écran ; le voile suffit.
 
 ## Export

@@ -27,6 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -201,22 +203,27 @@ fun ChampPalier(
     erreur: Boolean = false,
     imeAction: ImeAction = ImeAction.Next,
     onSuivant: KeyboardActionHandler? = null,
+    apparence: ApparenceChampPalier = ApparenceChampPalier.Tableau,
+    /** Valeur affichée en neutre-600 tant que le champ est vide (valeurs du tour précédent). */
+    indication: String = "0",
+    /** Le champ prend toute la largeur donnée par [modifier] (poids de la feuille « Ajouter un tour »). */
+    remplir: Boolean = false,
 ) {
     val interactions = remember { MutableInteractionSource() }
     val focus by interactions.collectIsFocusedAsState()
     // Largeur du contenu (valeur, « kg », marges, curseur) : au-delà de [largeur], le champ s'élargit.
     val mesureur = rememberTextMeasurer()
-    val marge = if (poids) 10.dp else 12.dp
+    val marge = apparence.marge ?: if (poids) 10.dp else 12.dp
     val largeurContenu = with(LocalDensity.current) {
-        val valeur = mesureur.measure(etat.text.toString().ifEmpty { "0" }, Typo.ValeurPalier).size.width.toDp()
-        val unite = if (poids) mesureur.measure("kg", Typo.Corps).size.width.toDp() + 4.dp else 0.dp
+        val valeur = mesureur.measure(etat.text.toString().ifEmpty { indication }, apparence.valeur).size.width.toDp()
+        val unite = if (poids) mesureur.measure("kg", apparence.unite).size.width.toDp() + apparence.ecartUnite else 0.dp
         valeur + unite + marge * 2 + 2.dp
     }
     BasicTextField(
         state = etat,
         modifier = modifier.semantics { contentDescription = description },
         inputTransformation = if (poids) FiltrePoids else FiltreRepetitions,
-        textStyle = Typo.ValeurPalier.copy(color = Couleurs.Texte, textAlign = TextAlign.End),
+        textStyle = apparence.valeur.copy(color = Couleurs.Texte, textAlign = TextAlign.End),
         keyboardOptions = KeyboardOptions(keyboardType = if (poids) KeyboardType.Decimal else KeyboardType.Number, imeAction = imeAction),
         onKeyboardAction = onSuivant,
         lineLimits = TextFieldLineLimits.SingleLine,
@@ -225,8 +232,8 @@ fun ChampPalier(
         decorator = { champ ->
             Row(
                 modifier = Modifier
-                    .size(width = maxOf(largeur, largeurContenu), height = 48.dp)
-                    .background(Couleurs.Surface, Formes.Moyenne)
+                    .then(if (remplir) Modifier.fillMaxWidth().height(apparence.hauteur) else Modifier.size(width = maxOf(largeur, largeurContenu), height = apparence.hauteur))
+                    .background(apparence.fond, apparence.forme)
                     .border(
                         width = if (erreur || focus) 2.dp else 1.dp,
                         color = when {
@@ -234,20 +241,44 @@ fun ChampPalier(
                             focus -> Couleurs.Accent
                             else -> Couleurs.Separateur
                         },
-                        shape = Formes.Moyenne,
+                        shape = apparence.forme,
                     )
                     .padding(horizontal = marge),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                horizontalArrangement = Arrangement.spacedBy(apparence.ecartUnite, Alignment.End),
             ) {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    if (etat.text.isEmpty()) Text("0", style = Typo.ValeurPalier, color = Couleurs.Neutre600)
+                    if (etat.text.isEmpty()) Text(indication, style = apparence.valeur, color = Couleurs.Neutre600)
                     champ()
                 }
-                if (poids) Text("kg", style = Typo.Corps, color = Couleurs.Neutre400)
+                if (poids) Text("kg", style = apparence.unite, color = if (etat.text.isEmpty()) apparence.uniteSansValeur else Couleurs.Neutre400)
             }
         },
     )
+}
+
+/**
+ * Apparence d'un [ChampPalier] : tableau des paliers (7·D : 48 dp, 24 sp, surface, rayon 8) ou feuille « Ajouter un
+ * tour » (3·S+ T1 : 58 dp, 28 sp, `bg`, rayon 14, marges 14, « kg » 17 sp à 6 dp).
+ */
+class ApparenceChampPalier(
+    val hauteur: Dp,
+    val valeur: TextStyle,
+    val unite: TextStyle,
+    val fond: Color,
+    val forme: Shape,
+    val marge: Dp?,
+    val ecartUnite: Dp,
+    /** Couleur de « kg » tant que le champ est vide (indication du tour précédent : neutre-500). */
+    val uniteSansValeur: Color = Couleurs.Neutre400,
+) {
+    companion object {
+        val Tableau = ApparenceChampPalier(48.dp, Typo.ValeurPalier, Typo.Corps, Couleurs.Surface, Formes.Moyenne, marge = null, ecartUnite = 4.dp)
+        val Tour = ApparenceChampPalier(
+            58.dp, Typo.ValeurTour, Typo.UniteTour, Couleurs.Fond, Formes.Grande, marge = 14.dp, ecartUnite = 6.dp,
+            uniteSansValeur = Couleurs.Neutre500,
+        )
+    }
 }
 
 /** Rangée de boutons +X ronds de 58 dp, répartis sur la largeur, 8 dp sous le champ. */

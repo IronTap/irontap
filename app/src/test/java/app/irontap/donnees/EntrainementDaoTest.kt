@@ -357,6 +357,203 @@ class EntrainementDaoTest {
         assertEquals(listOf(simple, degressive, degressive), lignes.map { it.serieId })
     }
 
+    // --- Supersets (spec §4.3.10) ---
+
+    private fun onglet(nom: String, poids: Double?, reps: Int?) = SaisieOnglet(nom, poids, reps)
+
+    /** Exercices sous la forme « ordre.nom[rôle]: tour/poids×reps, … ». */
+    private suspend fun resumeSuperset(id: Long) = exercices(id).map { (exercice, series) ->
+        "${exercice.ordre}.${exercice.nom}[${exercice.supersetRole ?: "-"}]: " +
+            series.joinToString { (serie, paliers) -> "${serie.ordre}/" + paliers.joinToString("↓") { "${it.poidsKg}×${it.repetitions}" } }
+    }
+
+    @Test
+    fun `superset, tours A et B ensemble, exercices crees au premier tour a la suite`() = runTest {
+        val id = creer()
+        serie(id, nom = "Développé militaire", poids = 30.0, reps = 10)
+        // L'exercice courant a déjà une série : pas de superset.
+        assertNull(dao.commencerSuperset(id, "Développé militaire", "x"))
+        serie(id, poids = 30.0, reps = 10, suite = Suite.NouvelExercice)
+
+        val superset = checkNotNull(dao.commencerSuperset(id, "Élévations latérales", "s1"))
+        assertEquals(SupersetEnCours(id, "s1", nomA = "Élévations latérales"), superset)
+        assertNull(dao.commencerSuperset(id, "Autre", "s2"))
+
+        val premier = checkNotNull(dao.enregistrerTour(id, onglet("Élévations latérales", 8.0, 15), onglet(" Curl marteau ", 12.0, 12), false, t0, 5_000))
+        assertEquals(1, premier.tour)
+        assertEquals(setOf(RoleSuperset.A, RoleSuperset.B), premier.series.keys)
+        assertEquals(EtatChrono(id, Etat.EnCours, demarreA = 5_000), dao.lireChrono(id))
+        val deuxieme = checkNotNull(dao.enregistrerTour(id, onglet("ignoré", 8.0, 12), onglet("ignoré", 12.0, 10), false, t0, 6_000))
+        assertEquals(2, deuxieme.tour)
+
+        assertEquals(
+            listOf(
+                "1.Développé militaire[-]: 1/30.0×10, 2/30.0×10",
+                "2.Élévations latérales[A]: 1/8.0×15, 2/8.0×12",
+                "3.Curl marteau[B]: 1/12.0×12, 2/12.0×10",
+            ),
+            resumeSuperset(id),
+        )
+        val enCours = checkNotNull(dao.lireEnCoursComplet())
+        assertEquals(setOf("s1"), enCours.exercices.mapNotNull { it.exercice.supersetId }.toSet())
+        // Valeurs saisies effacées, onglet A actif, noms gardés.
+        assertEquals(SupersetEnCours(id, "s1", nomA = "Élévations latérales"), enCours.superset)
+    }
+
+    @Test
+    fun `superset, tour refuse sans rien ecrire si un nom manque`() = runTest {
+        val id = creer()
+        dao.commencerSuperset(id, "Élévations", "s1")
+        assertNull(dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), onglet("  ", 12.0, 12), false, t0, 5_000))
+        assertNull(dao.enregistrerTour(id, null, null, false, t0, 5_000))
+        assertTrue(exercices(id).isEmpty())
+        assertEquals(EtatChrono(id), dao.lireChrono(id))
+    }
+
+    @Test
+    fun `superset, degressive sur l'onglet B puis tour, palier garde par onglet`() = runTest {
+        val id = creer()
+        dao.commencerSuperset(id, "", "s1")
+        // Le nom de B se verrouille, son exercice n'est créé qu'avec le tour, après A. Sans nom pour A, rien n'est gardé.
+        assertNotNull(dao.ajouterPalierEnCours(id, "Curl", 14.0, 10, RoleSuperset.B))
+        assertNull(dao.ajouterPalierEnCours(id, " ", 14.0, 10, RoleSuperset.A))
+        val enCours = checkNotNull(dao.lireEnCoursComplet())
+        assertTrue(enCours.exercices.isEmpty())
+        assertEquals("Curl", enCours.superset?.nomB)
+        assertEquals(listOf(RoleSuperset.B), enCours.paliersEnCours.map { it.role })
+
+        dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), onglet("", 10.0, 8), false, t0, 5_000)
+        assertEquals(listOf("1.Élévations[A]: 1/8.0×15", "2.Curl[B]: 1/14.0×10↓10.0×8"), resumeSuperset(id))
+        assertTrue(checkNotNull(dao.lireEnCoursComplet()).paliersEnCours.isEmpty())
+    }
+
+    @Test
+    fun `nouvel exercice termine le superset, onglet vide ignore, exercice seul redevenu ordinaire`() = runTest {
+        val id = creer()
+        dao.commencerSuperset(id, "Élévations", "s1")
+        dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), onglet("Curl", 12.0, 12), false, t0, 5_000)
+        // Fin sur A seul : le superset reste un superset (B a une série au tour 1).
+        val fin = checkNotNull(dao.enregistrerTour(id, onglet("", 8.0, 12), null, true, t0, 6_000))
+        assertEquals(2 to setOf(RoleSuperset.A), fin.tour to fin.series.keys)
+        val apres = checkNotNull(dao.lireEnCoursComplet())
+        assertNull(apres.superset)
+        assertTrue(apres.entrainement.nouvelExercice)
+        assertEquals(listOf("1.Élévations[A]: 1/8.0×15, 2/8.0×12", "2.Curl[B]: 1/12.0×12"), resumeSuperset(id))
+
+        // Premier tour avec A seul : A redevient un exercice ordinaire.
+        dao.commencerSuperset(id, "Fentes", "s2")
+        dao.enregistrerTour(id, onglet("Fentes", 20.0, 10), null, true, t0, 7_000)
+        assertEquals("3.Fentes[-]: 1/20.0×10", resumeSuperset(id).last())
+        // Les deux onglets vides : rien d'enregistré, le superset se termine.
+        dao.commencerSuperset(id, "Gainage", "s3")
+        val vide = checkNotNull(dao.enregistrerTour(id, null, null, true, t0, 8_000))
+        assertTrue(vide.series.isEmpty())
+        assertNull(checkNotNull(dao.lireEnCoursComplet()).superset)
+        assertEquals(3, exercices(id).size)
+    }
+
+    @Test
+    fun `terminer pendant un superset, avec ou sans le tour`() = runTest {
+        val id = creer()
+        serie(id, nom = "Squat", suite = Suite.NouvelExercice)
+        dao.commencerSuperset(id, "Élévations", "s1")
+        dao.ajouterPalierEnCours(id, "Élévations", 8.0, 15, RoleSuperset.A)
+        dao.enregistrerTourEtTerminer(id, onglet("", 6.0, 12), null, t0, 0)
+        assertEquals(listOf("1.Squat[-]: 1/40.0×10", "2.Élévations[-]: 1/8.0×15↓6.0×12"), resumeSuperset(id))
+
+        val autre = creer()
+        serie(autre, nom = "Squat", suite = Suite.NouvelExercice)
+        dao.commencerSuperset(autre, "Élévations", "s2")
+        dao.ajouterPalierEnCours(autre, "Élévations", 8.0, 15, RoleSuperset.A)
+        dao.terminer(autre, t0)
+        assertEquals(listOf("1.Squat[-]: 1/40.0×10"), resumeSuperset(autre))
+        assertNull(dao.lireEnCoursComplet())
+    }
+
+    /** Superset terminé de trois tours : A 8×15, 8×12, 6×12 et B 12×12, 12×10, 10×10. */
+    private suspend fun supersetTermine(): Triple<Long, Long, Long> {
+        val id = creer()
+        dao.commencerSuperset(id, "Élévations", "s1")
+        dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), onglet("Curl", 12.0, 12), false, t0, 0)
+        dao.enregistrerTour(id, onglet("", 8.0, 12), onglet("", 12.0, 10), false, t0, 0)
+        dao.enregistrerTour(id, onglet("", 6.0, 12), onglet("", 10.0, 10), true, t0, 0)
+        dao.terminer(id, t0)
+        val (a, b) = exercices(id).map { it.exercice.id }
+        return Triple(id, a, b)
+    }
+
+    private suspend fun serieDuTour(exerciceId: Long, tour: Int, id: Long) =
+        exercices(id).first { it.exercice.id == exerciceId }.series.first { it.serie.ordre == tour }.serie.id
+
+    @Test
+    fun `supprimer dans un superset, les tours ne sont renumerotes que vides`() = runTest {
+        val (id, a, b) = supersetTermine()
+        // A du tour 2 : B reste, rien n'est renuméroté.
+        dao.supprimerSeries(listOf(serieDuTour(a, 2, id)))
+        assertEquals(listOf("1.Élévations[A]: 1/8.0×15, 3/6.0×12", "2.Curl[B]: 1/12.0×12, 2/12.0×10, 3/10.0×10"), resumeSuperset(id))
+        // B du tour 2 : le tour est vide, le tour 3 devient le 2 pour A et B.
+        dao.supprimerSeries(listOf(serieDuTour(b, 2, id)))
+        assertEquals(listOf("1.Élévations[A]: 1/8.0×15, 2/6.0×12", "2.Curl[B]: 1/12.0×12, 2/10.0×10"), resumeSuperset(id))
+        // Les deux d'un coup.
+        dao.supprimerSeries(listOf(serieDuTour(a, 1, id), serieDuTour(b, 1, id)))
+        assertEquals(listOf("1.Élévations[A]: 1/6.0×12", "2.Curl[B]: 1/10.0×10"), resumeSuperset(id))
+        // Plus de série pour A : l'exercice disparaît, B redevient ordinaire.
+        dao.supprimerSeries(listOf(serieDuTour(a, 1, id)))
+        assertEquals(listOf("1.Curl[-]: 1/10.0×10"), resumeSuperset(id))
+    }
+
+    @Test
+    fun `exercice d'un superset laisse seul, ses series sont renumerotees a la suite`() = runTest {
+        val (id, a, b) = supersetTermine()
+        dao.supprimerSeries(listOf(serieDuTour(b, 2, id)))
+        dao.supprimerSeries(listOf(serieDuTour(b, 1, id), serieDuTour(b, 3, id)))
+        assertEquals(listOf("1.Élévations[-]: 1/8.0×15, 2/8.0×12, 3/6.0×12"), resumeSuperset(id))
+        assertNotNull(a)
+    }
+
+    @Test
+    fun `ajouter un tour, completer un tour, modifier un tour`() = runTest {
+        val (id, a, b) = supersetTermine()
+        dao.supprimerSeries(listOf(serieDuTour(b, 3, id)))
+        assertEquals(4, dao.ecrireTour(a, b, null, listOf(ValeursPalier(6.0, 10)), null, t0))
+        // Case « — » du tour 3 complétée.
+        dao.ajouterSerie(b, listOf(ValeursPalier(10.0, 8)), t0, ordre = 3)
+        assertEquals(2, dao.ecrireTour(a, b, 2, listOf(ValeursPalier(9.0, 12)), listOf(ValeursPalier(12.0, 9), ValeursPalier(8.0, 6)), t0))
+        assertEquals(
+            listOf(
+                "1.Élévations[A]: 1/8.0×15, 2/9.0×12, 3/6.0×12, 4/6.0×10",
+                "2.Curl[B]: 1/12.0×12, 2/12.0×9↓8.0×6, 3/10.0×8",
+            ),
+            resumeSuperset(id),
+        )
+    }
+
+    @Test
+    fun `historique d'un exercice fait en superset, avec son partenaire`() = runTest {
+        supersetTermine()
+        val seul = creer(lundi.minusDays(3))
+        serie(seul, nom = "Curl")
+        dao.terminer(seul, t0)
+        val enCours = creer()
+        val lignes = dao.lireHistoriqueExercice(enCours, "curl")
+        assertEquals(listOf("Élévations", null), lignes.map { it.partenaire }.distinct())
+        assertEquals(listOf("Curl"), dao.lireHistoriqueExercice(enCours, "Élévations").map { it.partenaire }.distinct())
+    }
+
+    @Test
+    fun `memoriser un superset termine ou remplace est sans effet`() = runTest {
+        val id = creer()
+        val superset = checkNotNull(dao.commencerSuperset(id, "A", "s1"))
+        dao.memoriserSuperset(superset.copy(nomB = "B", actif = RoleSuperset.B, poidsB = "12", repetitionsB = "10"))
+        assertEquals(superset.copy(nomB = "B", actif = RoleSuperset.B, poidsB = "12", repetitionsB = "10"), dao.lireEnCoursComplet()?.superset)
+        dao.enregistrerTour(id, null, null, true, t0, 0)
+        dao.memoriserSuperset(superset)
+        assertNull(dao.lireEnCoursComplet()?.superset)
+        dao.commencerSuperset(id, "C", "s2")
+        dao.memoriserSuperset(superset.copy(nomA = "périmé"))
+        assertEquals("C", dao.lireEnCoursComplet()?.superset?.nomA)
+    }
+
     @Test
     fun `lecture complete triee pour le detail et l'export`() = runTest {
         val id = creer(lundi, "Dos")

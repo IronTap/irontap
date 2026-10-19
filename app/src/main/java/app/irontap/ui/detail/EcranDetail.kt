@@ -16,6 +16,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import app.irontap.ui.composants.EtiquetteSuperset
+import app.irontap.ui.composants.BadgeLettre
+import app.irontap.donnees.RoleSuperset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -75,6 +83,7 @@ import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.SerieAvecPaliers
 import app.irontap.logique.Suggestion
 import app.irontap.logique.decrirePalier
+import app.irontap.logique.decrireSerie
 import app.irontap.logique.formaterDate
 import app.irontap.ui.composants.BoutonContour
 import app.irontap.ui.composants.BoutonPrincipal
@@ -105,6 +114,12 @@ interface ActionsDetail {
     fun ajouterSerie(exercice: Exercice)
     fun supprimerSerie(exercice: Exercice, serie: SerieAvecPaliers)
     fun renommer(exercice: Exercice)
+
+    /** Superset (H) : appui sur « — », la série manquante de [exercice] pour ce [tour]. */
+    fun ajouterSerieAuTour(exercice: Exercice, tour: Int)
+    fun ajouterTour(bloc: BlocDetail.Superset)
+    fun modifierTour(bloc: BlocDetail.Superset, tour: TourSuperset)
+    fun supprimerTour(bloc: BlocDetail.Superset, tour: TourSuperset)
 }
 
 /** Écran 4 : détail d'un entraînement passé, ses séries, et l'édition de série en feuille (écran 5). */
@@ -122,7 +137,9 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
     var exporter by rememberSaveable { mutableStateOf(false) }
     ContenuDetail(
         complet = pret.complet,
-        serieRevelee = panneaux.suppression?.serie?.serie?.id ?: panneaux.serieEnSuppression,
+        serieRevelee = panneaux.suppression?.serie?.serie?.id
+            ?: panneaux.suppressionTour?.tour?.let { (it.a ?: it.b)?.serie?.id }
+            ?: panneaux.serieEnSuppression,
         navigation = navigation,
         onExporter = { exporter = true },
         onSupprimerEntrainement = vm::demanderSuppressionEntrainement,
@@ -131,8 +148,34 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             override fun ajouterSerie(exercice: Exercice) = vm.ouvrirEdition(exercice, serie = null)
             override fun supprimerSerie(exercice: Exercice, serie: SerieAvecPaliers) = vm.demanderSuppression(exercice, serie)
             override fun renommer(exercice: Exercice) = vm.ouvrirRenommage(exercice)
+            override fun ajouterSerieAuTour(exercice: Exercice, tour: Int) = vm.ouvrirEdition(exercice, serie = null, tour = tour)
+            override fun ajouterTour(bloc: BlocDetail.Superset) = vm.ouvrirAjoutTour(bloc)
+            override fun modifierTour(bloc: BlocDetail.Superset, tour: TourSuperset) = vm.ouvrirModificationTour(bloc, tour)
+            override fun supprimerTour(bloc: BlocDetail.Superset, tour: TourSuperset) = vm.demanderSuppressionTour(bloc, tour)
         },
     )
+    FeuilleTour(
+        edition = panneaux.tour,
+        champs = vm.champsTour,
+        paliersEnErreur = panneaux.paliersEnErreur.keys,
+        erreurEnregistrement = panneaux.erreurEnregistrement,
+        enregistrable = vm.tourEnregistrable(),
+        onEnregistrer = vm::enregistrerTour,
+        onSupprimer = { edition ->
+            val bloc = blocsDetail(pret.complet.exercices).filterIsInstance<BlocDetail.Superset>().firstOrNull { it.a.exercice.id == edition.a.id }
+            val tour = bloc?.tours?.firstOrNull { it.numero == edition.tour }
+            if (bloc != null && tour != null) vm.demanderSuppressionTour(bloc, tour)
+        },
+        onFermer = vm::fermerTour,
+    )
+    panneaux.suppressionTour?.let { suppression ->
+        DialogueSuppressionTour(
+            suppression = suppression,
+            erreur = panneaux.erreurEnregistrement,
+            onAnnuler = vm::annulerSuppressionTour,
+            onSupprimer = vm::confirmerSuppressionTour,
+        )
+    }
     FeuilleEdition(
         edition = panneaux.edition,
         paliers = vm.paliers,
@@ -152,11 +195,17 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             override fun fermer() = vm.fermerEdition()
         },
     )
+    // La feuille d'un tour dont le superset vient d'être défait (série supprimée) se ferme.
+    val blocs = blocsDetail(pret.complet.exercices)
+    panneaux.tour?.let { tour ->
+        if (blocs.none { it is BlocDetail.Superset && it.a.exercice.id == tour.a.id }) LaunchedEffect(tour) { vm.fermerTour() }
+    }
     panneaux.suppression?.let { suppression ->
         val series = pret.complet.exercices.firstOrNull { it.exercice.id == suppression.exercice.id }?.series.orEmpty()
         DialogueSuppressionSerie(
             suppression = suppression,
             nombreSeries = series.size,
+            renumerotation = renumerotationApresSuppression(blocs, suppression.exercice.id, suppression.serie.serie.ordre),
             erreur = panneaux.erreurEnregistrement,
             onAnnuler = vm::annulerSuppression,
             onSupprimer = vm::confirmerSuppression,
@@ -224,8 +273,11 @@ fun ContenuDetail(
                     )
                 }
             }
-            items(complet.exercices, key = { it.exercice.id }) { exercice ->
-                BlocExercice(exercice, serieRevelee, actions)
+            items(blocsDetail(complet.exercices), key = { it.cle }) { bloc ->
+                when (bloc) {
+                    is BlocDetail.Simple -> BlocExercice(bloc.exercice, serieRevelee, actions)
+                    is BlocDetail.Superset -> BlocSuperset(bloc, serieRevelee, actions)
+                }
             }
         }
     }
@@ -377,6 +429,83 @@ private fun BlocExercice(bloc: ExerciceAvecSeries, serieRevelee: Long?, actions:
     }
 }
 
+/**
+ * Superset (maquette H) : étiquette « 🔗 Superset », puis une carte au filet accent de 2 dp à gauche ; en-tête A | B
+ * (badges, noms ; appui = renommer), une ligne par tour, « + Ajouter un tour ».
+ */
+@Composable
+private fun BlocSuperset(bloc: BlocDetail.Superset, serieRevelee: Long?, actions: ActionsDetail) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        EtiquetteSuperset("Superset", Modifier.padding(start = 2.dp), detail = true)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(Formes.Grande)
+                .background(Couleurs.Surface)
+                .drawBehind { drawRect(Couleurs.Accent, size = Size(2.dp.toPx(), size.height)) }
+                .padding(start = 2.dp),
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Spacer(Modifier.width(18.dp))
+                RoleSuperset.entries.forEach { role ->
+                    val exercice = bloc.exercice(role).exercice
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(Formes.Moyenne)
+                            .clickable(role = Role.Button, onClickLabel = "Renommer l’exercice $role") { actions.renommer(exercice) },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        BadgeLettre(role, taille = 18.dp, style = Typo.BadgeOngletPetit)
+                        Text(exercice.nom, style = Typo.TitreCarte, color = Couleurs.Texte, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+            bloc.tours.forEach { tour ->
+                val revelee = (tour.a ?: tour.b)?.serie?.id
+                key(revelee) { LigneTour(bloc, tour, revelee != null && revelee == serieRevelee, actions) }
+            }
+            LigneAjout("Ajouter un tour") { actions.ajouterTour(bloc) }
+        }
+    }
+}
+
+/**
+ * Un tour : numéro (appui = « Modifier le tour N »), série A, série B en 18 / 500 (appui = édition, écran 7 ou 7·D),
+ * « — » neutre-600 s'il en manque une (appui = l'ajouter à ce tour). Balayé : « Supprimer le tour N ? ».
+ */
+@Composable
+private fun LigneTour(bloc: BlocDetail.Superset, tour: TourSuperset, revelee: Boolean, actions: ActionsDetail) {
+    LigneBalayable(revelee, "Supprimer le tour ${tour.numero}", { actions.supprimerTour(bloc, tour) }, hauteurMin = 52.dp, onClick = null) {
+        NumeroLigne(
+            tour.numero,
+            Modifier.clickable(role = Role.Button, onClickLabel = "Modifier le tour ${tour.numero}") { actions.modifierTour(bloc, tour) },
+        )
+        RoleSuperset.entries.forEach { role ->
+            val exercice = bloc.exercice(role).exercice
+            val serie = tour.serie(role)
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clickable(role = Role.Button, onClickLabel = if (serie == null) "Ajouter la série $role" else "Modifier la série $role") {
+                        if (serie == null) actions.ajouterSerieAuTour(exercice, tour.numero) else actions.modifierSerie(exercice, serie)
+                    },
+            ) {
+                if (serie == null) {
+                    Text("—", style = Typo.TitreSection, color = Couleurs.Neutre600)
+                } else {
+                    ValeurSerie(serie, Typo.TitreSection)
+                }
+            }
+        }
+    }
+}
+
 /** Filet couleur `bg` en haut de chaque ligne de la carte. */
 private fun Modifier.filetHaut() = drawBehind {
     drawLine(Couleurs.Fond, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx() * 2)
@@ -389,12 +518,53 @@ private val LargeurSuppression = 96.dp
 
 /**
  * Ligne de série, 54 dp au moins : numéro (calé en haut), valeur 20 / 500, chevron ; les paliers d'une dégressive
- * s'empilent sous la valeur (6a), la ligne grandit. Balayée vers la gauche, elle laisse apparaître la zone
- * « Supprimer » (96 dp, rouge sombre) et demande confirmation pour la série entière ; elle reste ouverte tant
- * que le dialogue est affiché ([revelee]), puis se referme si la suppression est annulée.
+ * s'empilent sous la valeur (6a), la ligne grandit. Balayée, elle demande la suppression de la série entière.
  */
 @Composable
 private fun LigneSerie(serie: SerieAvecPaliers, revelee: Boolean, onModifier: () -> Unit, onSupprimer: () -> Unit) {
+    LigneBalayable(revelee, "Supprimer la série", onSupprimer, hauteurMin = 54.dp, onClick = onModifier) { decalee ->
+        NumeroLigne(serie.serie.ordre)
+        ValeurSerie(serie, Typo.TitreEntete, Modifier.weight(1f))
+        if (!decalee) Icone(R.drawable.ic_caret_right, taille = 16.dp, couleur = Couleurs.Neutre600)
+    }
+}
+
+/** Numéro d'une série ou d'un tour : 15 sp neutre-500, 18 dp, calé en haut (paliers empilés dessous). */
+@Composable
+private fun RowScope.NumeroLigne(numero: Int, modifier: Modifier = Modifier) {
+    Text(
+        "$numero",
+        style = Typo.Corps,
+        color = Couleurs.Neutre500,
+        modifier = modifier
+            .align(Alignment.Top)
+            .padding(top = 4.dp)
+            .width(18.dp),
+    )
+}
+
+/** Valeur d'une série en [style], paliers dégressifs empilés dessous. */
+@Composable
+private fun ValeurSerie(serie: SerieAvecPaliers, style: TextStyle, modifier: Modifier = Modifier) {
+    val textes = serie.paliers.map { decrirePalier(it.poidsKg, it.repetitions) }
+    PaliersEmpiles(textes.firstOrNull().orEmpty(), textes.drop(1), style, modifier)
+}
+
+/**
+ * Ligne de la carte balayable vers la gauche : elle laisse apparaître la zone « Supprimer » (96 dp, rouge sombre)
+ * et appelle [onSupprimer] (confirmation) ; elle reste ouverte tant que le dialogue est affiché ([revelee]), puis
+ * se referme si la suppression est annulée. [onClick] : appui sur toute la ligne (série) ; `null` si le contenu a
+ * ses propres zones d'appui (tour de superset). Le contenu reçoit `true` tant que la ligne est décalée.
+ */
+@Composable
+private fun LigneBalayable(
+    revelee: Boolean,
+    actionSuppression: String,
+    onSupprimer: () -> Unit,
+    hauteurMin: Dp,
+    onClick: (() -> Unit)?,
+    contenu: @Composable RowScope.(decalee: Boolean) -> Unit,
+) {
     val largeur = with(LocalDensity.current) { LargeurSuppression.toPx() }
     val glisse = remember {
         AnchoredDraggableState(
@@ -426,7 +596,7 @@ private fun LigneSerie(serie: SerieAvecPaliers, revelee: Boolean, onModifier: ()
                 flingBehavior = AnchoredDraggableDefaults.flingBehavior(glisse, positionalThreshold = { it / 2 }),
             )
             .semantics {
-                customActions = listOf(CustomAccessibilityAction("Supprimer la série") { onSupprimer(); true })
+                customActions = listOf(CustomAccessibilityAction(actionSuppression) { onSupprimer(); true })
             },
     ) {
         if (decalage < 0f) {
@@ -450,38 +620,31 @@ private fun LigneSerie(serie: SerieAvecPaliers, revelee: Boolean, onModifier: ()
         // La ligne se raccourcit à mesure que la zone « Supprimer » apparaît : sa valeur reste lisible (6b).
         Row(
             modifier = Modifier
-                // 54 dp avec le filet du haut.
-                .heightIn(min = 53.dp)
+                // Hauteur avec le filet du haut.
+                .heightIn(min = hauteurMin - 1.dp)
                 .layout { mesurable, contraintes ->
                     val largeurLigne = (contraintes.maxWidth + decalage.roundToInt()).coerceAtLeast(0)
                     val ligne = mesurable.measure(contraintes.copy(minWidth = largeurLigne, maxWidth = largeurLigne))
                     layout(contraintes.maxWidth, ligne.height) { ligne.place(0, 0) }
                 }
                 .background(if (decalage < 0f || appuye) Couleurs.Neutre800 else Couleurs.Surface)
-                .clickable(interactions, indication = null, role = Role.Button, onClick = onModifier)
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(interactions, indication = null, role = Role.Button, onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text(
-                "${serie.serie.ordre}",
-                style = Typo.Corps,
-                color = Couleurs.Neutre500,
-                modifier = Modifier
-                    .align(Alignment.Top)
-                    .padding(top = 4.dp)
-                    .width(18.dp),
-            )
-            val textes = serie.paliers.map { decrirePalier(it.poidsKg, it.repetitions) }
-            PaliersEmpiles(textes.firstOrNull().orEmpty(), textes.drop(1), Typo.TitreEntete, Modifier.weight(1f))
-            if (decalage == 0f) Icone(R.drawable.ic_caret_right, taille = 16.dp, couleur = Couleurs.Neutre600)
-        }
+            horizontalArrangement = Arrangement.spacedBy(if (onClick != null) 14.dp else 12.dp),
+        ) { contenu(decalage < 0f) }
     }
 }
 
-/** Dernière ligne de la carte, 48 dp : « + Ajouter une série » en 15 / 500 accent-300. */
+/** Dernière ligne de la carte, 48 dp : « + Ajouter une série » (ou [texte]) en 15 / 500 accent-300. */
 @Composable
-private fun LigneAjout(onClick: () -> Unit) {
+private fun LigneAjout(texte: String = "Ajouter une série", onClick: () -> Unit) {
     val interactions = remember { MutableInteractionSource() }
     val appuye by interactions.collectIsPressedAsState()
     Row(
@@ -496,7 +659,7 @@ private fun LigneAjout(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Icone(R.drawable.ic_plus, taille = 16.dp, couleur = Couleurs.Accent300)
-        Text("Ajouter une série", style = Typo.Action, color = Couleurs.Accent300)
+        Text(texte, style = Typo.Action, color = Couleurs.Accent300)
     }
 }
 
@@ -535,6 +698,8 @@ internal fun DialogueSuppressionSerie(
     suppression: SuppressionSerie,
     nombreSeries: Int,
     erreur: Boolean,
+    /** Les séries suivantes changent de numéro (dans un superset : seulement si le tour devient vide). */
+    renumerotation: Boolean = suppression.serie.serie.ordre < nombreSeries,
     onAnnuler: () -> Unit,
     onSupprimer: () -> Unit,
 ) {
@@ -547,7 +712,7 @@ internal fun DialogueSuppressionSerie(
                 append(".")
                 when {
                     nombreSeries <= 1 -> append(" C’est sa seule série : l’exercice sera retiré de l’entraînement.")
-                    serie.ordre < nombreSeries -> append(" Les séries suivantes seront renumérotées.")
+                    renumerotation -> append(" Les séries suivantes seront renumérotées.")
                 }
             },
             style = Typo.CorpsDialogue,
@@ -562,6 +727,62 @@ internal fun DialogueSuppressionSerie(
 }
 
 private const val ErreurSuppression = "Suppression impossible : stockage indisponible"
+
+/**
+ * « Supprimer le tour N ? » (H) : séries de A et de B rappelées, puis « Supprimer A », « Supprimer B »,
+ * « Supprimer les deux » (le choix sans objet est masqué) et « Annuler ». Un tour devenu vide disparaît.
+ */
+@Composable
+internal fun DialogueSuppressionTour(
+    suppression: SuppressionTour,
+    erreur: Boolean,
+    onAnnuler: () -> Unit,
+    onSupprimer: (Set<RoleSuperset>) -> Unit,
+) {
+    val tour = suppression.tour
+    val presents = RoleSuperset.entries.filter { tour.serie(it) != null }
+    DialogueNocturne(titre = "Supprimer le tour ${tour.numero} ?", onFermer = onAnnuler) {
+        Text(
+            text = buildAnnotatedString {
+                RoleSuperset.entries.forEachIndexed { index, role ->
+                    if (index > 0) append("\n")
+                    val exercice = if (role == RoleSuperset.A) suppression.a else suppression.b
+                    append("$role · ${exercice.nom} · ")
+                    withStyle(SpanStyle(color = Couleurs.Texte)) { append(tour.serie(role)?.let { decrireSerie(it.valeurs) } ?: "—") }
+                }
+                append("\nUn tour sans série disparaît, les suivants sont renumérotés.")
+            },
+            style = Typo.CorpsDialogue,
+            color = Couleurs.Neutre300,
+        )
+        if (erreur) MessageErreur(ErreurSuppression)
+        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (presents.size == 2) {
+                RoleSuperset.entries.forEach { role -> BoutonSupprimerLarge("Supprimer $role") { onSupprimer(setOf(role)) } }
+                BoutonSupprimerLarge("Supprimer les deux") { onSupprimer(presents.toSet()) }
+            } else {
+                presents.forEach { role -> BoutonSupprimerLarge("Supprimer $role") { onSupprimer(setOf(role)) } }
+            }
+            BoutonTexte("Annuler", onClick = onAnnuler, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/** Choix destructif empilé (« Supprimer A ») : contour erreur, texte rouge clair, 48 dp, pleine largeur. */
+@Composable
+private fun BoutonSupprimerLarge(texte: String, onClick: () -> Unit) {
+    BoutonContour(
+        texte = texte,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        hauteur = 48.dp,
+        forme = Formes.Moyenne,
+        style = Typo.Action,
+        couleurTexte = Couleurs.DestructifDialogue,
+        bordure = Couleurs.ErreurBordure,
+        fondAppuye = Couleurs.FondSuppression,
+    )
+}
 
 /** Menu ⋮ > Supprimer l'entraînement : confirmation, définitive. */
 @Composable

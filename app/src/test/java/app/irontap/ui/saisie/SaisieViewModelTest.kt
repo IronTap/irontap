@@ -11,6 +11,8 @@ import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.Horloge
 import app.irontap.donnees.ValeursPalier
+import app.irontap.donnees.SaisieOnglet
+import app.irontap.donnees.RoleSuperset
 import app.irontap.logique.HistoriqueExercice
 import app.irontap.logique.LigneHistorique
 import app.irontap.logique.SeanceHistorique
@@ -440,5 +442,232 @@ class SaisieViewModelTest {
         vm.demanderFin()
         val dialogue = vm.formulaire.attendre { it.dialogue != null }.dialogue
         assertEquals("50 kg × 10", (dialogue as DialogueFin.AvecSerie).serie.description)
+    }
+
+    // --- Supersets (spec §4.3.10) ---
+
+    private suspend fun SaisieViewModel.enSuperset() =
+        etat.attendre { (it as? EtatSaisie.EnCours)?.superset != null } as EtatSaisie.EnCours
+
+    private fun SaisieViewModel.saisirOnglet(role: RoleSuperset, nom: String? = null, poids: String? = null, repetitions: String? = null) {
+        val champs = champs(role)
+        nom?.let(champs.nom::setTextAndPlaceCursorAtEnd)
+        poids?.let(champs.poids::setTextAndPlaceCursorAtEnd)
+        repetitions?.let(champs.repetitions::setTextAndPlaceCursorAtEnd)
+        Snapshot.sendApplyNotifications()
+    }
+
+    private fun SaisieViewModel.valeurs(role: RoleSuperset) = champs(role).let { listOf(it.nom, it.poids, it.repetitions).map { c -> c.text.toString() } }
+
+    @Test
+    fun `pastille superset avant la premiere serie, puis A et B enregistres ensemble`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        assertTrue(vm.enCours().supersetPossible)
+        vm.saisir(nom = "Élévations latérales", poids = "8", repetitions = "15")
+        horloge.realtime = 5_000
+        vm.basculerChrono()
+
+        vm.commencerSuperset()
+        val etat = vm.enSuperset()
+        assertFalse(etat.supersetPossible)
+        // A reprend le nom et les valeurs déjà saisis ; B est vide.
+        assertEquals(RoleSuperset.A, vm.ongletActif)
+        assertEquals(listOf("Élévations latérales", "8", "15"), vm.valeurs(RoleSuperset.A))
+        assertEquals(listOf("", "", ""), vm.valeurs(RoleSuperset.B))
+
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, "Curl marteau", "12", "12")
+        vm.basculer(RoleSuperset.A)
+        // Chaque onglet garde ses valeurs.
+        assertEquals(listOf("Élévations latérales", "8", "15"), vm.valeurs(RoleSuperset.A))
+        assertEquals(listOf("Curl marteau", "12", "12"), vm.valeurs(RoleSuperset.B))
+
+        horloge.realtime = 30_000
+        vm.enregistrer(Suite.NouvelleSerie)
+        val apres = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 } as EtatSaisie.EnCours
+        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 12", dernierToast())
+        assertEquals(RoleSuperset.A, vm.ongletActif)
+        assertEquals(listOf("", ""), vm.valeurs(RoleSuperset.A).drop(1))
+        assertEquals(listOf("", ""), vm.valeurs(RoleSuperset.B).drop(1))
+        assertEquals("Élévations latérales", apres.etatSuperset?.nomVerrouille(RoleSuperset.A))
+        assertEquals("Curl marteau", apres.etatSuperset?.nomVerrouille(RoleSuperset.B))
+        assertEquals("Élévations latérales + Curl marteau · Série 2", apres.ligne)
+        assertEquals(EtatChrono(id, EtatChrono.Etat.EnCours, demarreA = 30_000), dao.lireChrono(id))
+        assertEquals(
+            listOf("Élévations latérales" to listOf(ValeursPalier(8.0, 15)), "Curl marteau" to listOf(ValeursPalier(12.0, 12))),
+            dao.lireEnCoursComplet()!!.exercices.map { it.exercice.nom to it.series.single().valeurs },
+        )
+    }
+
+    @Test
+    fun `valeur manquante sur B depuis A, bascule sur B avec l'erreur, rien n'est enregistre`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, nom = "Curl", poids = "12")
+        vm.basculer(RoleSuperset.A)
+
+        Snapshot.sendApplyNotifications()
+        vm.enregistrer(Suite.NouvelleSerie)
+        // La bascule automatique ne fait pas disparaître l'erreur qu'elle vient d'afficher…
+        Snapshot.sendApplyNotifications()
+        assertEquals(RoleSuperset.B, vm.ongletActif)
+        assertEquals(Formulaire(erreurRepetitions = true), vm.formulaire.value)
+        assertTrue(dao.lireComplet(id)!!.exercices.isEmpty())
+        assertEquals(EtatChrono(id), dao.lireChrono(id))
+        // … la saisie dans le champ fautif, si.
+        vm.saisirOnglet(RoleSuperset.B, repetitions = "10")
+        assertFalse(vm.formulaire.value.erreurRepetitions)
+    }
+
+    @Test
+    fun `superset memorise apres les ecritures en attente, rien de deja enregistre n'est retabli`() = runTest {
+        creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "14", "10")
+        vm.degressive()
+        // Bascule et passage en arrière-plan aussitôt, pendant l'écriture du palier.
+        vm.basculer(RoleSuperset.A)
+        vm.memoriserSaisie()
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.paliersEnCours?.size == 1 }
+        vm.memoriserSaisie()
+        val memorise = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.nomB == "Curl" } as EtatSaisie.EnCours
+        assertEquals("" to "", memorise.superset!!.poidsB to memorise.superset!!.repetitionsB)
+        assertEquals("" to "", dao.lireEnCoursComplet()!!.superset!!.let { it.poidsB to it.repetitionsB })
+    }
+
+    @Test
+    fun `terminer avec A saisi et B vide, enregistrer A seul`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "12")
+        vm.commencerSuperset()
+        vm.enSuperset()
+
+        vm.demanderFin()
+        val dialogue = vm.formulaire.attendre { it.dialogue != null }.dialogue
+        assertEquals(DialogueFin.SupersetIncomplet(RoleSuperset.A, SaisieOnglet("Élévations", 8.0, 12), "8 kg × 12"), dialogue)
+        vm.terminer(avecSerie = true)
+        vm.etat.attendre { it == EtatSaisie.Aucun }
+        assertEquals(
+            listOf("Élévations" to listOf(listOf(ValeursPalier(8.0, 12)))),
+            dao.lireComplet(id)!!.exercices.map { it.exercice.nom to it.series.map { s -> s.valeurs } },
+        )
+    }
+
+    @Test
+    fun `terminer avec A et B saisis propose la serie complete`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "12")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "10")
+
+        vm.demanderFin()
+        val dialogue = vm.formulaire.attendre { it.dialogue != null }.dialogue as DialogueFin.SupersetComplet
+        assertEquals("A 8 kg × 12 · B 12 kg × 10", dialogue.description)
+        vm.terminer(avecSerie = true)
+        vm.etat.attendre { it == EtatSaisie.Aucun }
+        assertEquals(listOf("Élévations", "Curl"), dao.lireComplet(id)!!.exercices.map { it.exercice.nom })
+    }
+
+    @Test
+    fun `nouvel exercice ignore un onglet vide et termine le superset`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.saisirOnglet(RoleSuperset.B, nom = "Curl")
+
+        vm.enregistrer(Suite.NouvelExercice)
+        val apres = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.let { e -> e.superset == null && e.exercices.isNotEmpty() } == true } as EtatSaisie.EnCours
+        assertEquals("Série 1 enregistrée · A seul · 8 kg × 15", dernierToast())
+        assertTrue(apres.supersetPossible)
+        assertEquals(listOf("", "", ""), vm.valeurs(RoleSuperset.A))
+        assertEquals(listOf("Élévations"), dao.lireComplet(id)!!.exercices.map { it.exercice.nom })
+    }
+
+    @Test
+    fun `degressive sur l'onglet actif d'un superset`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "14", "10")
+        vm.degressive()
+        val etat = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.paliersEnCours?.size == 1 } as EtatSaisie.EnCours
+        assertEquals("14 kg × 10 ↓ …", etat.etatSuperset?.chaineDegressive(RoleSuperset.B))
+        assertEquals("Curl", etat.etatSuperset?.nomVerrouille(RoleSuperset.B))
+        assertEquals(listOf("Curl", "", ""), vm.valeurs(RoleSuperset.B))
+        assertEquals(listOf("Élévations", "8", "15"), vm.valeurs(RoleSuperset.A))
+
+        vm.saisirOnglet(RoleSuperset.B, poids = "10", repetitions = "8")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
+        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 14 kg × 10 ↓ 10 kg × 8", dernierToast())
+        assertEquals(2, dao.lireComplet(id)!!.exercices[1].series.single().paliers.size)
+    }
+
+    @Test
+    fun `historique A ou B selon l'onglet actif`() = runTest {
+        passe(LocalDate.of(2026, 10, 5), "Bras", "Curl marteau", 14.0 to 10)
+        creer()
+        val vm = ecran()
+        backgroundScope.launch { vm.historiqueDisponible.collect {} }
+        vm.enCours()
+        vm.saisir(nom = "Élévations")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        assertFalse(vm.historiqueDisponible.value)
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, nom = "curl MARTEAU")
+        vm.historiqueDisponible.attendre { it }
+
+        vm.ouvrirHistorique()
+        assertEquals("Curl marteau", vm.formulaire.attendre { it.historique != null }.historique?.nom)
+        vm.fermerHistorique()
+        vm.basculer(RoleSuperset.A)
+        Snapshot.sendApplyNotifications()
+        vm.historiqueDisponible.attendre { !it }
+    }
+
+    @Test
+    fun `appli tuee au milieu d'un superset, l'etat est restaure`() = runTest {
+        creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "11")
+        // Écran en arrière-plan, puis processus tué.
+        vm.memoriserSaisie()
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.repetitionsB == "11" }
+        vms.vider()
+
+        val reprise = ecran(BrouillonSaisie())
+        reprise.enSuperset()
+        assertEquals(RoleSuperset.B, reprise.ongletActif)
+        assertEquals(listOf("Élévations", "8", "15"), reprise.valeurs(RoleSuperset.A))
+        assertEquals(listOf("Curl", "12", "11"), reprise.valeurs(RoleSuperset.B))
     }
 }

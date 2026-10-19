@@ -17,7 +17,7 @@ data class ContenuNotification(val chrono: EtatChrono, val ligne: String) {
         fun de(enCours: EntrainementEnCours?): ContenuNotification? {
             val chrono = enCours?.chrono ?: return null
             if (chrono.etat == EtatChrono.Etat.Arrete) return null
-            return ContenuNotification(chrono, EtatSaisie.EnCours(enCours.entrainement, enCours.exercices, chrono).ligne)
+            return ContenuNotification(chrono, EtatSaisie.EnCours.de(enCours).ligne)
         }
     }
 }

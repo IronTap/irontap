@@ -29,7 +29,7 @@ sealed interface EtatAccueil {
 class AccueilViewModel(private val dao: EntrainementDao, private val horloge: Horloge) : ViewModel() {
 
     val etat: StateFlow<EtatAccueil> = combine(dao.observerHistorique(), dao.observerEnCoursComplet()) { historique, enCours ->
-        EtatAccueil.Pret(historique, enCours?.let { EtatSaisie.EnCours(it.entrainement, it.exercices, it.chrono) })
+        EtatAccueil.Pret(historique, enCours?.let { EtatSaisie.EnCours.de(it) })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EtatAccueil.Chargement)
 
     /** `elapsedRealtime` courant, pour le chrono du bandeau. */

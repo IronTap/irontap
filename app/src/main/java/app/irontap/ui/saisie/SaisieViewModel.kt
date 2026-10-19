@@ -4,6 +4,9 @@ import android.database.sqlite.SQLiteException
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
@@ -17,7 +20,12 @@ import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.EtatChrono
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.Horloge
+import app.irontap.donnees.EntrainementEnCours
 import app.irontap.donnees.PalierEnCours
+import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.SaisieOnglet
+import app.irontap.donnees.SupersetEnCours
+import app.irontap.donnees.TourEnregistre
 import app.irontap.donnees.SerieAvecPaliers
 import app.irontap.donnees.ValeursPalier
 import app.irontap.logique.HistoriqueExercice
@@ -47,6 +55,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /** Ce que la base dit de l'entraînement en cours. */
 sealed interface EtatSaisie {
@@ -59,10 +68,15 @@ sealed interface EtatSaisie {
         val entrainement: Entrainement,
         val exercices: List<ExerciceAvecSeries>,
         val chrono: EtatChrono?,
-        /** Paliers gardés par « Dégressive » pour la série en cours (spec §4.3.9). */
+        /** Paliers gardés par « Dégressive » pour la série en cours (spec §4.3.9), onglets d'un superset compris. */
         val paliersEnCours: List<PalierEnCours> = emptyList(),
+        /** Superset en cours de saisie (spec §4.3.10), `null` hors superset. */
+        val superset: SupersetEnCours? = null,
     ) : EtatSaisie {
         private val dernier = exercices.lastOrNull()
+
+        /** Superset en cours, avec ses exercices et ses paliers gardés. */
+        val etatSuperset = superset?.let { EtatSuperset(it, exercices, paliersEnCours) }
 
         /** Nom verrouillé : l'exercice courant a déjà une série et « Nouvel exercice » n'a pas été demandé. */
         val verrouille = dernier != null && !entrainement.nouvelExercice
@@ -70,17 +84,44 @@ sealed interface EtatSaisie {
         /** Nom de l'exercice courant quand il est verrouillé. */
         val nomVerrouille = if (verrouille) dernier?.exercice?.nom else null
 
-        val numeroExercice = if (verrouille) exercices.size else exercices.size + 1
-        val numeroSerie = if (verrouille) dernier!!.series.size + 1 else 1
+        /** Exercices déjà ouverts, un superset comptant pour un seul : « Exercice N » de l'en-tête. */
+        private fun blocs(exercices: List<ExerciceAvecSeries>) = exercices.map { it.exercice.supersetId ?: "#${it.exercice.id}" }.distinct().size
 
-        /** « Tirage vertical · Série 3 » (notification, accueil) ; après « Nouvel exercice », le nom n'est pas encore connu. */
-        val ligne = "${nomVerrouille ?: "Exercice $numeroExercice"} · Série $numeroSerie"
+        val numeroExercice = when {
+            superset != null -> blocs(exercices.filter { it.exercice.supersetId != superset.supersetId }) + 1
+            verrouille -> blocs(exercices)
+            else -> blocs(exercices) + 1
+        }
+        val numeroSerie = when {
+            etatSuperset != null -> etatSuperset.tour
+            verrouille -> dernier!!.series.size + 1
+            else -> 1
+        }
 
-        /** Valeurs des paliers déjà gardés, dans l'ordre. */
-        val paliersPrecedents = paliersEnCours.map { it.valeurs }
+        /**
+         * « Tirage vertical · Série 3 » (notification, accueil) ; après « Nouvel exercice », le nom n'est pas encore connu.
+         * En superset : « Élévations latérales + Curl marteau · Série 2 ».
+         */
+        val ligne = if (etatSuperset != null) {
+            val noms = RoleSuperset.entries.map { etatSuperset.nom(it).trim() }.filter { it.isNotEmpty() }
+            "${noms.joinToString(" + ").ifEmpty { "Superset" }} · Série $numeroSerie"
+        } else {
+            "${nomVerrouille ?: "Exercice $numeroExercice"} · Série $numeroSerie"
+        }
+
+        /** Pastille « Superset » (S1) : l'exercice courant n'a encore ni série ni palier gardé. */
+        val supersetPossible = superset == null && !verrouille && paliersEnCours.isEmpty()
+
+        /** Valeurs des paliers déjà gardés hors superset, dans l'ordre. */
+        val paliersPrecedents = paliersEnCours.filter { it.role == null }.map { it.valeurs }
 
         /** En-tête en mode dégressive (3·D A2, A3) : « 50 kg × 10 ↓ 30 kg × 8 ↓ … », `null` hors dégressive. */
-        val chaineDegressive = if (paliersEnCours.isEmpty()) null else decrireSerie(paliersPrecedents) + " ↓ …"
+        val chaineDegressive = if (paliersPrecedents.isEmpty()) null else decrireSerie(paliersPrecedents) + " ↓ …"
+
+        companion object {
+            fun de(enCours: EntrainementEnCours) =
+                EnCours(enCours.entrainement, enCours.exercices, enCours.chrono, enCours.paliersEnCours, enCours.superset)
+        }
     }
 }
 
@@ -100,6 +141,12 @@ sealed interface DialogueFin {
 
     /** 4b. */
     data object Simple : DialogueFin
+
+    /** 4a en superset : A et B saisis, enregistrés ensemble. [description] : « A 8 kg × 12 · B 12 kg × 10 ». */
+    data class SupersetComplet(val a: SaisieOnglet, val b: SaisieOnglet, val description: String) : DialogueFin
+
+    /** S5 : un seul onglet du superset saisi ([role]) ; « Enregistrer A seul et terminer ». [description] : « 8 kg × 12 ». */
+    data class SupersetIncomplet(val role: RoleSuperset, val saisie: SaisieOnglet, val description: String) : DialogueFin
 }
 
 /** État propre à l'écran, hors champs de saisie. */
@@ -119,28 +166,72 @@ data class Formulaire(
 /**
  * Champs en cours de saisie, gardés par le conteneur de l'application : après Retour puis « Reprendre »,
  * la saisie est retrouvée telle qu'elle a été laissée (spec §4.1). Ils sont perdus si l'application est
- * tuée (spec §7). `TextFieldState` plutôt qu'un StateFlow, pour ne jamais perdre une frappe.
+ * tuée (spec §7), sauf pendant un superset : ses deux onglets sont mémorisés en base à chaque bascule et
+ * quand l'écran passe en arrière-plan (spec §4.3.10). `TextFieldState` plutôt qu'un StateFlow, pour ne
+ * jamais perdre une frappe.
  */
 class BrouillonSaisie {
-    val nom = TextFieldState()
-    val poids = TextFieldState()
-    val repetitions = TextFieldState()
+    /** Exercice courant, ou onglet A d'un superset. */
+    val principal = ChampsOnglet()
+
+    /** Onglet B d'un superset. */
+    val ongletB = ChampsOnglet()
+
+    val nom get() = principal.nom
+    val poids get() = principal.poids
+    val repetitions get() = principal.repetitions
+
+    /** Onglet affiché pendant un superset ; A hors superset. */
+    var actif by mutableStateOf(RoleSuperset.A)
+
+    fun champs(role: RoleSuperset) = if (role == RoleSuperset.A) principal else ongletB
 
     private var entrainementId: Long? = null
 
-    /** Associe le brouillon à l'entraînement en cours ; celui d'un autre entraînement est vidé. */
-    fun pour(id: Long) {
-        if (entrainementId != id) {
-            vider()
-            entrainementId = id
-        }
+    /**
+     * Associe le brouillon à l'entraînement en cours ; celui d'un autre entraînement est vidé. `true` si le
+     * brouillon vient d'être (ré)associé : après un kill, c'est le moment de retrouver un superset mémorisé.
+     */
+    fun pour(id: Long): Boolean {
+        if (entrainementId == id) return false
+        vider()
+        entrainementId = id
+        return true
     }
 
     fun vider() {
-        nom.clearText()
-        poids.clearText()
-        repetitions.clearText()
+        RoleSuperset.entries.forEach { viderOnglet(it, nom = true) }
+        actif = RoleSuperset.A
     }
+
+    fun viderOnglet(role: RoleSuperset, nom: Boolean) {
+        val champs = champs(role)
+        if (nom) champs.nom.clearText()
+        champs.poids.clearText()
+        champs.repetitions.clearText()
+    }
+
+    /** Superset mémorisé en base (appli tuée) : noms, valeurs saisies et onglet actif. */
+    fun restaurer(superset: SupersetEnCours) {
+        principal.nom.setTextAndPlaceCursorAtEnd(superset.nomA)
+        principal.poids.setTextAndPlaceCursorAtEnd(superset.poidsA)
+        principal.repetitions.setTextAndPlaceCursorAtEnd(superset.repetitionsA)
+        ongletB.nom.setTextAndPlaceCursorAtEnd(superset.nomB)
+        ongletB.poids.setTextAndPlaceCursorAtEnd(superset.poidsB)
+        ongletB.repetitions.setTextAndPlaceCursorAtEnd(superset.repetitionsB)
+        actif = superset.actif
+    }
+
+    /** État du superset à mémoriser : celui de la base, avec les noms, valeurs et onglet du brouillon. */
+    fun instantane(superset: SupersetEnCours) = superset.copy(
+        nomA = principal.nom.text.toString(),
+        nomB = ongletB.nom.text.toString(),
+        actif = actif,
+        poidsA = principal.poids.text.toString(),
+        repetitionsA = principal.repetitions.text.toString(),
+        poidsB = ongletB.poids.text.toString(),
+        repetitionsB = ongletB.repetitions.text.toString(),
+    )
 }
 
 /** Saisie des séries de l'entraînement en cours (écran 3, spec §4.3). */
@@ -162,13 +253,27 @@ class SaisieViewModel(
             if (enCours == null) {
                 EtatSaisie.Aucun
             } else {
-                EtatSaisie.EnCours(enCours.entrainement, enCours.exercices, enCours.chrono, enCours.paliersEnCours)
+                EtatSaisie.EnCours.de(enCours)
             }
         }
-        .onEach { if (it is EtatSaisie.EnCours) brouillon.pour(it.entrainement.id) }
+        .onEach { etat ->
+            if (etat is EtatSaisie.EnCours && brouillon.pour(etat.entrainement.id)) {
+                // Brouillon neuf (appli tuée) : un superset reprend là où il a été mémorisé.
+                etat.superset?.let(brouillon::restaurer)
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), EtatSaisie.Chargement)
 
-    private val texteNom = snapshotFlow { nom.text.toString() }
+    /** Onglet affiché pendant un superset (A hors superset). */
+    val ongletActif: RoleSuperset get() = brouillon.actif
+
+    /** Champs de l'onglet [role] d'un superset ; A : ceux de l'exercice courant. */
+    fun champs(role: RoleSuperset) = brouillon.champs(role)
+
+    /** Champs affichés : ceux de l'exercice courant, ou de l'onglet actif d'un superset. */
+    private val actifs get() = brouillon.champs(brouillon.actif)
+
+    private val texteNom = snapshotFlow { actifs.nom.text.toString() }
 
     val suggestions: StateFlow<List<Suggestion>> = combine(
         texteNom,
@@ -196,9 +301,12 @@ class SaisieViewModel(
         texteNom,
         _formulaire.map { it.erreurNom }.distinctUntilChanged(),
         nomsAutresEntrainements,
-    ) { etat, saisie, erreurNom, noms ->
+        snapshotFlow { brouillon.actif },
+    ) { etat, saisie, erreurNom, noms, actif ->
         val enCours = etat as? EtatSaisie.EnCours
-        val nom = enCours?.nomVerrouille ?: saisie.takeUnless { enCours == null || erreurNom }
+        // En superset (pastille « Historique A/B ») : l'exercice de l'onglet actif.
+        val verrouille = enCours?.etatSuperset?.let { it.nomVerrouille(actif) } ?: enCours?.nomVerrouille.takeIf { enCours?.superset == null }
+        val nom = verrouille ?: saisie.takeUnless { enCours == null || erreurNom }
         nom != null && normaliserNom(nom).let { it.isNotEmpty() && it in noms }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -218,21 +326,31 @@ class SaisieViewModel(
 
     init {
         // Une erreur disparaît dès que le champ fautif est modifié (spec §4.3.5).
-        viewModelScope.launch { texteNom.collect { _formulaire.update { it.copy(erreurNom = false) } } }
+        // Une bascule d'onglet ne compte pas : la validation bascule elle-même sur l'onglet fautif pour y montrer l'erreur.
+        effacerSiModifie({ it.nom }) { it.copy(erreurNom = false) }
+        effacerSiModifie({ it.repetitions }) { it.copy(erreurRepetitions = false) }
+    }
+
+    /** Applique [effacer] quand le champ [champ] de l'onglet affiché est modifié, pas quand l'onglet change. */
+    private fun effacerSiModifie(champ: (ChampsOnglet) -> TextFieldState, effacer: (Formulaire) -> Formulaire) {
         viewModelScope.launch {
-            snapshotFlow { repetitions.text.toString() }.collect { _formulaire.update { it.copy(erreurRepetitions = false) } }
+            var ongletPrecedent: RoleSuperset? = null
+            snapshotFlow { brouillon.actif to champ(actifs).text.toString() }.collect { (onglet, _) ->
+                if (onglet == ongletPrecedent) _formulaire.update(effacer)
+                ongletPrecedent = onglet
+            }
         }
     }
 
     override fun choisir(suggestion: Suggestion) {
-        nom.setTextAndPlaceCursorAtEnd(suggestion.nom)
+        actifs.nom.setTextAndPlaceCursorAtEnd(suggestion.nom)
         _formulaire.update { it.copy(nomChoisi = suggestion.nom) }
     }
 
-    override fun ajouterAuPoids(valeur: Int) = poids.setTextAndPlaceCursorAtEnd(ajouterPoids(poids.text.toString(), valeur))
+    override fun ajouterAuPoids(valeur: Int) = actifs.poids.let { it.setTextAndPlaceCursorAtEnd(ajouterPoids(it.text.toString(), valeur)) }
 
     override fun ajouterAuxRepetitions(valeur: Int) =
-        repetitions.setTextAndPlaceCursorAtEnd(ajouterRepetitions(repetitions.text.toString(), valeur))
+        actifs.repetitions.let { it.setTextAndPlaceCursorAtEnd(ajouterRepetitions(it.text.toString(), valeur)) }
 
     /** Écrit en base après l'écriture précédente ; un échec SQLite (stockage plein…) est signalé, sans plantage. */
     private fun ecrire(bloc: suspend () -> Unit): Job {
@@ -269,6 +387,7 @@ class SaisieViewModel(
     override fun enregistrer(suite: Suite) {
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
         if (enregistrement?.isActive == true) return
+        enCours.etatSuperset?.let { return enregistrerTour(enCours, it, fin = suite == Suite.NouvelExercice) }
         val serie = valider(enCours) ?: return
         enregistrement = ecrire {
             val enregistree = sauver(enCours, serie, suite)
@@ -290,6 +409,7 @@ class SaisieViewModel(
     override fun degressive() {
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
         if (enregistrement?.isActive == true) return
+        enCours.etatSuperset?.let { return degressiveSuperset(enCours, it) }
         val serie = valider(enCours) ?: return
         val palier = checkNotNull(serie.courant)
         enregistrement = ecrire {
@@ -341,13 +461,120 @@ class SaisieViewModel(
         }
     }
 
+    // --- Superset (spec §4.3.10) ---
+
+    /** Pastille « Superset » : l'exercice courant devient l'onglet A, avec ce qui est déjà saisi ; B est vide. */
+    override fun commencerSuperset() {
+        val enCours = etat.value as? EtatSaisie.EnCours ?: return
+        if (!enCours.supersetPossible || enregistrement?.isActive == true) return
+        enregistrement = ecrire {
+            val superset = dao.commencerSuperset(enCours.entrainement.id, nom.text.toString(), UUID.randomUUID().toString())
+            if (superset != null) {
+                brouillon.viderOnglet(RoleSuperset.B, nom = true)
+                brouillon.actif = RoleSuperset.A
+                _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
+                dao.memoriserSuperset(brouillon.instantane(superset))
+            }
+        }
+    }
+
+    /** Appui sur l'onglet inactif : ses valeurs déjà saisies sont réaffichées ; le superset est mémorisé. */
+    override fun basculer(role: RoleSuperset) {
+        val superset = (etat.value as? EtatSaisie.EnCours)?.superset ?: return
+        // Pendant un enregistrement, qui vide les onglets et revient sur A.
+        if (brouillon.actif == role || enregistrement?.isActive == true) return
+        brouillon.actif = role
+        _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
+        memoriser(superset)
+    }
+
+    /** Écran en arrière-plan : le superset est mémorisé, l'appli peut être tuée sans le perdre. */
+    override fun memoriserSaisie() {
+        (etat.value as? EtatSaisie.EnCours)?.superset?.let(::memoriser)
+    }
+
+    /** L'instantané est pris après les écritures en attente : un tour ou un palier tout juste vidé n'est pas rétabli. */
+    private fun memoriser(superset: SupersetEnCours) {
+        ecrire { dao.memoriserSuperset(brouillon.instantane(superset)) }
+    }
+
+    /**
+     * Valeurs de l'onglet [role] prêtes à enregistrer, ou `null` après avoir basculé sur cet onglet et signalé
+     * le nom ou les répétitions manquants (rien n'est enregistré).
+     */
+    private fun validerOnglet(superset: EtatSuperset, role: RoleSuperset): SaisieOnglet? {
+        val champs = brouillon.champs(role)
+        val nomManquant = !superset.verrouille(role) && champs.nom.text.isBlank()
+        val repetitions = lireRepetitions(champs.repetitions.text.toString())
+        if (nomManquant || repetitions == null) {
+            brouillon.actif = role
+            _formulaire.update { it.copy(erreurNom = nomManquant, erreurRepetitions = repetitions == null, nomChoisi = null) }
+            return null
+        }
+        return SaisieOnglet(champs.nom.text.toString(), lirePoids(champs.poids.text.toString()), repetitions)
+    }
+
+    /**
+     * « Nouvelle série » : A et B ensemble, dans un même tour ; « Nouvel exercice » ([fin]) : les onglets non vides
+     * (ni poids, ni répétitions, ni palier gardé : ignoré), puis le superset se termine.
+     */
+    private fun enregistrerTour(enCours: EtatSaisie.EnCours, superset: EtatSuperset, fin: Boolean) {
+        val roles = RoleSuperset.entries.filter { role -> !fin || !brouillon.champs(role).vide || superset.paliers(role).isNotEmpty() }
+        val saisies = HashMap<RoleSuperset, SaisieOnglet>()
+        for (role in roles) saisies[role] = validerOnglet(superset, role) ?: return
+        enregistrement = ecrire {
+            val tour = dao.enregistrerTour(
+                entrainementId = enCours.entrainement.id,
+                a = saisies[RoleSuperset.A],
+                b = saisies[RoleSuperset.B],
+                fin = fin,
+                maintenant = horloge.maintenant(),
+                realtime = horloge.realtime(),
+            ) ?: return@ecrire
+            RoleSuperset.entries.forEach { brouillon.viderOnglet(it, nom = fin) }
+            brouillon.actif = RoleSuperset.A
+            _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
+            afficherToast(messageTour(tour))
+        }
+    }
+
+    /** « Série 2 enregistrée · A 8 kg × 12 · B 12 kg × 10 », « … · A seul · 8 kg × 12 », ou « Superset terminé ». */
+    private fun messageTour(tour: TourEnregistre): String {
+        val series = tour.series
+        return when (series.size) {
+            0 -> "Superset terminé"
+            1 -> series.entries.single().let { (role, serie) -> "Série ${tour.tour} enregistrée · $role seul · ${decrireSerie(serie.valeurs)}" }
+            else -> "Série ${tour.tour} enregistrée · " + series.entries.joinToString(" · ") { (role, serie) -> "$role ${decrireSerie(serie.valeurs)}" }
+        }
+    }
+
+    /** « Dégressive » sur l'onglet actif : le palier est gardé pour cet onglet, dont le nom se verrouille. */
+    private fun degressiveSuperset(enCours: EtatSaisie.EnCours, superset: EtatSuperset) {
+        val role = brouillon.actif
+        val saisie = validerOnglet(superset, role) ?: return
+        val repetitions = checkNotNull(saisie.repetitions)
+        enregistrement = ecrire {
+            val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, saisie.nom, saisie.poidsKg, repetitions, role)
+            if (garde != null) {
+                brouillon.viderOnglet(role, nom = false)
+                _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = brouillon.champs(role).nom.text.toString()) }
+                enCours.superset?.let { dao.memoriserSuperset(brouillon.instantane(it)) }
+            }
+        }
+    }
+
     // --- Historique de l'exercice ---
 
     /** Ouvre la popup 3g sur l'exercice verrouillé, ou sur le nom saisi. Lecture seule : la saisie n'est pas touchée. */
     override fun ouvrirHistorique() {
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
         if (lectureHistorique?.isActive == true || _formulaire.value.historique != null) return
-        val nomExercice = enCours.nomVerrouille ?: nom.text.toString()
+        val superset = enCours.etatSuperset
+        val nomExercice = if (superset != null) {
+            superset.nomVerrouille(brouillon.actif) ?: actifs.nom.text.toString()
+        } else {
+            enCours.nomVerrouille ?: nom.text.toString()
+        }
         lectureHistorique = viewModelScope.launch {
             val historique = try {
                 historiqueExercice(dao.lireHistoriqueExercice(enCours.entrainement.id, nomExercice))
@@ -377,7 +604,11 @@ class SaisieViewModel(
                 afficherToast("Lecture impossible : stockage indisponible", erreur = true)
                 return@launch
             } ?: return@launch
-            val enCours = EtatSaisie.EnCours(lu.entrainement, lu.exercices, lu.chrono, lu.paliersEnCours)
+            val enCours = EtatSaisie.EnCours.de(lu)
+            enCours.etatSuperset?.let { superset ->
+                _formulaire.update { it.copy(dialogue = dialogueFinSuperset(superset)) }
+                return@launch
+            }
             val courant = lireRepetitions(repetitions.text.toString())?.let { ValeursPalier(lirePoids(poids.text.toString()), it) }
             // Une dégressive en attente fait proposer sa série (spec §4.3.9), avec le palier courant s'il est valide.
             val remplie = (enCours.verrouille || nom.text.isNotBlank()) && (courant != null || enCours.paliersEnCours.isNotEmpty())
@@ -390,6 +621,25 @@ class SaisieViewModel(
         }
     }
 
+    /**
+     * Fin pendant un superset (S5), selon les onglets saisis (répétitions valides, ou paliers gardés, et un nom) :
+     * les deux (4a), un seul (série incomplète), aucun (4b).
+     */
+    private fun dialogueFinSuperset(superset: EtatSuperset): DialogueFin {
+        val saisis = RoleSuperset.entries.mapNotNull { role ->
+            val champs = brouillon.champs(role)
+            val courant = lireRepetitions(champs.repetitions.text.toString())?.let { ValeursPalier(lirePoids(champs.poids.text.toString()), it) }
+            val nomPresent = superset.verrouille(role) || champs.nom.text.isNotBlank()
+            if (!nomPresent || (courant == null && superset.paliers(role).isEmpty())) return@mapNotNull null
+            Triple(role, SaisieOnglet(champs.nom.text.toString(), courant?.poidsKg, courant?.repetitions), decrireSerie(superset.paliers(role) + listOfNotNull(courant)))
+        }
+        return when (saisis.size) {
+            2 -> DialogueFin.SupersetComplet(saisis[0].second, saisis[1].second, saisis.joinToString(" · ") { (role, _, texte) -> "$role $texte" })
+            1 -> saisis.single().let { (role, saisie, texte) -> DialogueFin.SupersetIncomplet(role, saisie, texte) }
+            else -> DialogueFin.Simple
+        }
+    }
+
     override fun annulerFin() = _formulaire.update { it.copy(dialogue = null) }
 
     /**
@@ -399,15 +649,24 @@ class SaisieViewModel(
     override fun terminer(avecSerie: Boolean) {
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
         val dialogue = _formulaire.value.dialogue ?: return
-        val serie = (dialogue as? DialogueFin.AvecSerie)?.serie?.takeIf { avecSerie }
         _formulaire.update { it.copy(dialogue = null) }
         ecrire {
             val id = enCours.entrainement.id
-            if (serie != null) {
-                val courant = serie.courant
-                dao.enregistrerSerieEtTerminer(id, serie.nom, courant?.poidsKg, courant?.repetitions, horloge.maintenant(), horloge.realtime())
-            } else {
-                dao.terminer(id, horloge.maintenant())
+            when {
+                !avecSerie || dialogue == DialogueFin.Simple -> dao.terminer(id, horloge.maintenant())
+                dialogue is DialogueFin.AvecSerie -> dialogue.serie.let { serie ->
+                    val courant = serie.courant
+                    dao.enregistrerSerieEtTerminer(id, serie.nom, courant?.poidsKg, courant?.repetitions, horloge.maintenant(), horloge.realtime())
+                }
+                dialogue is DialogueFin.SupersetComplet ->
+                    dao.enregistrerTourEtTerminer(id, dialogue.a, dialogue.b, horloge.maintenant(), horloge.realtime())
+                dialogue is DialogueFin.SupersetIncomplet -> dao.enregistrerTourEtTerminer(
+                    id,
+                    a = dialogue.saisie.takeIf { dialogue.role == RoleSuperset.A },
+                    b = dialogue.saisie.takeIf { dialogue.role == RoleSuperset.B },
+                    maintenant = horloge.maintenant(),
+                    realtime = horloge.realtime(),
+                )
             }
             brouillon.vider()
         }

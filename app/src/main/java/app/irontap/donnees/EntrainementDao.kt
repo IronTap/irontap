@@ -108,13 +108,16 @@ abstract class EntrainementDao {
 
     /**
      * Termine l'entraînement (spec §4.3.6) : son chrono est supprimé et, s'il n'a aucune série,
-     * l'entraînement lui-même. Une dégressive en attente est abandonnée, avec l'exercice que son premier
-     * palier avait ouvert si aucune série n'y a été enregistrée.
+     * l'entraînement lui-même. Une dégressive ou un superset en attente est abandonné, avec l'exercice que le
+     * premier palier d'une dégressive avait ouvert si aucune série n'y a été enregistrée ; un exercice resté
+     * seul de son superset redevient ordinaire.
      */
     @Transaction
     open suspend fun terminer(id: Long, maintenant: Instant) {
+        supprimerSupersetEnCours(id)
         supprimerPaliersEnCours(id)
         supprimerExercicesSansSerie(id)
+        dissoudreSupersetsIncomplets(id)
         if (compterSeriesEntrainement(id) == 0) {
             supprimerEntrainement(id)
         } else {
@@ -150,12 +153,11 @@ abstract class EntrainementDao {
         realtime: Long,
     ): SerieAvecPaliers? {
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
-        val paliers = lirePaliersEnCours(entrainementId).sortedBy { it.ordre }.map { it.valeurs } +
-            listOfNotNull(repetitions?.let { ValeursPalier(poidsKg, it) })
+        val paliers = paliersGardes(entrainementId, role = null) + listOfNotNull(repetitions?.let { ValeursPalier(poidsKg, it) })
         if (paliers.isEmpty()) return null
         val exerciceId = exerciceCourant(entrainement, nomExercice) ?: return null
         val serie = ajouterSerie(exerciceId, paliers, maintenant)
-        supprimerPaliersEnCours(entrainementId)
+        supprimerPaliersEnCours(entrainementId, role = null)
         modifierNouvelExercice(entrainementId, suite == Suite.NouvelExercice)
         enregistrer((lireChrono(entrainementId) ?: EtatChrono(entrainementId)).relance(realtime))
         return serie
@@ -164,9 +166,10 @@ abstract class EntrainementDao {
     /**
      * « Dégressive » (spec §4.3.9) : garde le palier [poidsKg] × [repetitions] pour la série en cours, sans
      * toucher au chrono ni au numéro de série. Le nom se verrouille : un nouvel exercice est ouvert dès ce
-     * premier palier, comme le ferait [enregistrerSerie]. Retourne le palier gardé, ou `null` sans rien
-     * enregistrer si un nouvel exercice doit être ouvert et que [nomExercice] est vide, ou si l'entraînement
-     * n'est plus en cours.
+     * premier palier, comme le ferait [enregistrerSerie]. Dans un superset ([role]), le palier est gardé pour
+     * cet onglet et son nom mémorisé ; l'exercice ne sera créé qu'avec le tour, après A s'il s'agit de B.
+     * Retourne le palier gardé, ou `null` sans rien enregistrer si un nouvel exercice doit être ouvert et que
+     * [nomExercice] est vide, si [role] est donné sans superset en cours, ou si l'entraînement n'est plus en cours.
      */
     @Transaction
     open suspend fun ajouterPalierEnCours(
@@ -174,18 +177,33 @@ abstract class EntrainementDao {
         nomExercice: String,
         poidsKg: Double?,
         repetitions: Int,
+        role: RoleSuperset? = null,
     ): PalierEnCours? {
         verifier(ValeursPalier(poidsKg, repetitions))
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
-        exerciceCourant(entrainement, nomExercice) ?: return null
+        if (role == null) {
+            exerciceCourant(entrainement, nomExercice) ?: return null
+        } else {
+            val superset = lireSupersetEnCours(entrainementId) ?: return null
+            val existant = lireExercicesSuperset(superset.supersetId).firstOrNull { it.supersetRole == role }
+            if (existant == null) {
+                val nom = nomExercice.trim().ifEmpty { superset.nom(role).trim() }.ifEmpty { return null }
+                memoriserSuperset(if (role == RoleSuperset.A) superset.copy(nomA = nom) else superset.copy(nomB = nom))
+            }
+        }
         val palier = PalierEnCours(
             entrainementId = entrainementId,
-            ordre = compterPaliersEnCours(entrainementId) + 1,
+            ordre = compterPaliersEnCours(entrainementId, role) + 1,
             poidsKg = poidsKg,
             repetitions = repetitions,
+            role = role,
         )
         return palier.copy(id = inserer(palier))
     }
+
+    /** Paliers gardés par « Dégressive » pour la série en cours ([role] : onglet d'un superset), dans l'ordre. */
+    private suspend fun paliersGardes(entrainementId: Long, role: RoleSuperset?): List<ValeursPalier> =
+        lirePaliersEnCours(entrainementId).filter { it.role == role }.sortedBy { it.ordre }.map { it.valeurs }
 
     /**
      * Exercice qui reçoit la prochaine série ou le prochain palier : le dernier de l'entraînement, ou un nouveau
@@ -218,6 +236,125 @@ abstract class EntrainementDao {
         terminer(entrainementId, maintenant)
     }
 
+    // --- Superset (spec §4.3.10) ---
+
+    /**
+     * Pastille « Superset » : l'exercice courant devient A, nommé [nomA] tel que saisi, et B est vide. Retourne le
+     * superset commencé, ou `null` sans rien changer si un superset est déjà en cours, si l'exercice courant a
+     * déjà une série ou un palier gardé, ou si l'entraînement n'est plus en cours.
+     */
+    @Transaction
+    open suspend fun commencerSuperset(entrainementId: Long, nomA: String, supersetId: String): SupersetEnCours? {
+        val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
+        if (lireSupersetEnCours(entrainementId) != null) return null
+        if (lireDernierExercice(entrainementId) != null && !entrainement.nouvelExercice) return null
+        if (lirePaliersEnCours(entrainementId).isNotEmpty()) return null
+        val superset = SupersetEnCours(entrainementId, supersetId, nomA = nomA)
+        inserer(superset)
+        return superset
+    }
+
+    /**
+     * Enregistre un tour du superset en cours : la série de chaque onglet saisi ([a], [b] ; `null` : onglet ignoré),
+     * paliers gardés par « Dégressive » compris, avec le même numéro de tour, puis relance le chrono. Les exercices
+     * A et B sont créés au premier tour où ils ont une série, à la suite de l'entraînement. [fin] (« Nouvel
+     * exercice », fin de l'entraînement) : le superset se termine, l'exercice suivant sera nouveau, et un exercice
+     * resté seul redevient ordinaire ; sinon les valeurs saisies sont effacées et l'onglet A redevient actif.
+     * Retourne le tour enregistré (sans série si les deux onglets sont ignorés avec [fin]), ou `null` sans rien
+     * enregistrer : pas de superset en cours, onglet sans aucun palier, nom vide pour un exercice à créer, ou
+     * aucun onglet sans [fin]. Le tour s'enregistre en entier ou pas du tout.
+     */
+    @Transaction
+    open suspend fun enregistrerTour(
+        entrainementId: Long,
+        a: SaisieOnglet?,
+        b: SaisieOnglet?,
+        fin: Boolean,
+        maintenant: Instant,
+        realtime: Long,
+    ): TourEnregistre? {
+        lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
+        val superset = lireSupersetEnCours(entrainementId) ?: return null
+        val saisies = listOfNotNull(a?.let { RoleSuperset.A to it }, b?.let { RoleSuperset.B to it })
+        if (saisies.isEmpty() && !fin) return null
+        val existants = lireExercicesSuperset(superset.supersetId).associateBy { it.supersetRole }
+        // Tout est vérifié avant la première écriture.
+        val aEnregistrer = saisies.map { (role, saisie) ->
+            val paliers = paliersGardes(entrainementId, role) + listOfNotNull(saisie.repetitions?.let { ValeursPalier(saisie.poidsKg, it) })
+            if (paliers.isEmpty()) return null
+            paliers.forEach(::verifier)
+            val nom = saisie.nom.trim().ifEmpty { superset.nom(role).trim() }
+            if (existants[role] == null && nom.isEmpty()) return null
+            Triple(role, nom, paliers)
+        }
+        val tour = (lireDernierTourSuperset(superset.supersetId) ?: 0) + 1
+        var dernierOrdre = lireDernierExercice(entrainementId)?.ordre ?: 0
+        val series = LinkedHashMap<RoleSuperset, SerieAvecPaliers>()
+        for ((role, nom, paliers) in aEnregistrer) {
+            val exerciceId = existants[role]?.id ?: inserer(
+                Exercice(entrainementId = entrainementId, nom = nom, ordre = ++dernierOrdre, supersetId = superset.supersetId, supersetRole = role),
+            )
+            series[role] = ajouterSerie(exerciceId, paliers, maintenant, ordre = tour)
+            supprimerPaliersEnCours(entrainementId, role)
+        }
+        if (series.isNotEmpty()) enregistrer((lireChrono(entrainementId) ?: EtatChrono(entrainementId)).relance(realtime))
+        if (fin) {
+            supprimerSupersetEnCours(entrainementId)
+            supprimerPaliersEnCours(entrainementId)
+            modifierNouvelExercice(entrainementId, true)
+            dissoudreSupersetsIncomplets(entrainementId)
+        } else {
+            reinitialiserSuperset(entrainementId)
+        }
+        return TourEnregistre(tour, series)
+    }
+
+    /** Dialogues de fin d'un superset (4a, série incomplète) : le tour, puis la fin de l'entraînement, ensemble. */
+    @Transaction
+    open suspend fun enregistrerTourEtTerminer(
+        entrainementId: Long,
+        a: SaisieOnglet?,
+        b: SaisieOnglet?,
+        maintenant: Instant,
+        realtime: Long,
+    ) {
+        enregistrerTour(entrainementId, a, b, fin = true, maintenant = maintenant, realtime = realtime)
+        terminer(entrainementId, maintenant)
+    }
+
+    /** Mémorise noms, onglet actif et valeurs saisies ; sans effet si ce superset s'est terminé entre-temps. */
+    suspend fun memoriserSuperset(superset: SupersetEnCours) = with(superset) {
+        memoriserSupersetBrut(
+            entrainementId, supersetId, nomA, nomB, actif, poidsA, repetitionsA, poidsB, repetitionsB,
+        )
+    }
+
+    /**
+     * Détail (maquette 3·S+ T1) : écrit le tour [tour] du superset de [exerciceA] et [exerciceB] (un nouveau tour
+     * après le dernier si `null`). Pour chaque exercice, [a] ou [b] remplace les paliers de sa série de ce tour, ou
+     * la crée s'il n'en a pas ; `null` : rien pour cet exercice. Retourne le numéro du tour, ou `null` sans rien
+     * écrire si A et B ne forment plus ce superset (l'un supprimé entre-temps).
+     */
+    @Transaction
+    open suspend fun ecrireTour(
+        exerciceA: Long,
+        exerciceB: Long,
+        tour: Int?,
+        a: List<ValeursPalier>?,
+        b: List<ValeursPalier>?,
+        maintenant: Instant,
+    ): Int? {
+        val supersetId = lireExercice(exerciceA)?.supersetId ?: return null
+        if (lirePartenaire(supersetId, exerciceA)?.id != exerciceB) return null
+        val numero = tour ?: ((lireDernierTourSuperset(supersetId) ?: 0) + 1)
+        for ((exerciceId, paliers) in listOf(exerciceA to a, exerciceB to b)) {
+            if (paliers == null) continue
+            val existante = lireSerieTour(exerciceId, numero)
+            if (existante != null) modifierSerie(existante.id, paliers, maintenant) else ajouterSerie(exerciceId, paliers, maintenant, ordre = numero)
+        }
+        return numero
+    }
+
     /** Applique une action du chrono (Play, Pause, Relancer) à l'état enregistré. */
     @Transaction
     open suspend fun modifierChrono(entrainementId: Long, action: (EtatChrono) -> EtatChrono): EtatChrono? {
@@ -233,12 +370,15 @@ abstract class EntrainementDao {
         renommerExerciceBrut(id, nomNettoye)
     }
 
-    /** Ajoute une série de [paliers] (au moins un, le principal d'abord) en dernière position de l'exercice. */
+    /**
+     * Ajoute une série de [paliers] (au moins un, le principal d'abord) en dernière position de l'exercice, ou au
+     * numéro [ordre] (tour d'un superset où cet exercice n'a pas encore de série).
+     */
     @Transaction
-    open suspend fun ajouterSerie(exerciceId: Long, paliers: List<ValeursPalier>, maintenant: Instant): SerieAvecPaliers {
+    open suspend fun ajouterSerie(exerciceId: Long, paliers: List<ValeursPalier>, maintenant: Instant, ordre: Int? = null): SerieAvecPaliers {
         require(paliers.isNotEmpty()) { "Série sans palier" }
         paliers.forEach(::verifier)
-        val serie = Serie(exerciceId = exerciceId, ordre = compterSeries(exerciceId) + 1, creeLe = maintenant)
+        val serie = Serie(exerciceId = exerciceId, ordre = ordre ?: ((lireDernierOrdre(exerciceId) ?: 0) + 1), creeLe = maintenant)
         val enregistree = serie.copy(id = inserer(serie))
         return SerieAvecPaliers(enregistree, insererPaliers(enregistree.id, paliers))
     }
@@ -267,18 +407,32 @@ abstract class EntrainementDao {
     /**
      * Supprime la série et renumérote les suivantes (spec §4.4). Un exercice sans série est supprimé
      * et les exercices suivants renumérotés ; l'entraînement, lui, reste dans l'historique.
+     * Dans un superset (spec §4.3.10), le numéro est celui du tour : les tours ne sont renumérotés, pour A et B,
+     * que si ce tour devient vide ; un exercice resté seul redevient ordinaire, ses séries numérotées à la suite.
      */
     @Transaction
     open suspend fun supprimerSerie(id: Long) {
         val serie = lireSerie(id) ?: return
+        val exercice = lireExercice(serie.exerciceId) ?: return
+        val partenaire = exercice.supersetId?.let { lirePartenaire(it, exercice.id) }
         supprimerSerieBrut(id)
-        decalerSeries(serie.exerciceId, serie.ordre)
-        if (compterSeries(serie.exerciceId) == 0) {
-            val exercice = lireExercice(serie.exerciceId) ?: return
+        if (partenaire == null || lireSerieTour(partenaire.id, serie.ordre) == null) {
+            decalerSeries(exercice.id, serie.ordre)
+            if (partenaire != null) decalerSeries(partenaire.id, serie.ordre)
+        }
+        if (compterSeries(exercice.id) == 0) {
             supprimerExercice(exercice.id)
             decalerExercices(exercice.entrainementId, exercice.ordre)
+            if (partenaire != null) {
+                dissoudreSupersetsIncomplets(exercice.entrainementId)
+                lireSeries(partenaire.id).sortedBy { it.ordre }.forEachIndexed { index, s -> modifierOrdreSerie(s.id, index + 1) }
+            }
         }
     }
+
+    /** « Supprimer le tour N ? » (H) : les séries choisies (A, B ou les deux), ensemble ; cf. [supprimerSerie]. */
+    @Transaction
+    open suspend fun supprimerSeries(ids: List<Long>) = ids.forEach { supprimerSerie(it) }
 
     // --- Requêtes élémentaires ---
 
@@ -320,7 +474,8 @@ abstract class EntrainementDao {
 
     @Query(
         """
-        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions
+        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions,
+        (SELECT y.nom FROM exercice y WHERE y.superset_id = x.superset_id AND y.id != x.id LIMIT 1) AS partenaire
         FROM palier p JOIN serie s ON s.id = p.serie_id JOIN exercice x ON x.id = s.exercice_id
         JOIN entrainement t ON t.id = x.entrainement_id
         WHERE x.nom IN (:noms) AND t.id != :entrainementId
@@ -361,11 +516,82 @@ abstract class EntrainementDao {
     @Query("SELECT * FROM palier_en_cours WHERE entrainement_id = :entrainementId")
     protected abstract suspend fun lirePaliersEnCours(entrainementId: Long): List<PalierEnCours>
 
-    @Query("SELECT COUNT(*) FROM palier_en_cours WHERE entrainement_id = :entrainementId")
-    protected abstract suspend fun compterPaliersEnCours(entrainementId: Long): Int
+    /** `role IS :role` : vrai aussi pour deux `NULL` (paliers hors superset). */
+    @Query("SELECT COUNT(*) FROM palier_en_cours WHERE entrainement_id = :entrainementId AND role IS :role")
+    protected abstract suspend fun compterPaliersEnCours(entrainementId: Long, role: RoleSuperset?): Int
 
     @Query("DELETE FROM palier_en_cours WHERE entrainement_id = :entrainementId")
     protected abstract suspend fun supprimerPaliersEnCours(entrainementId: Long)
+
+    @Query("DELETE FROM palier_en_cours WHERE entrainement_id = :entrainementId AND role IS :role")
+    protected abstract suspend fun supprimerPaliersEnCours(entrainementId: Long, role: RoleSuperset?)
+
+    @Insert
+    protected abstract suspend fun inserer(superset: SupersetEnCours)
+
+    @Query("SELECT * FROM superset_en_cours WHERE entrainement_id = :entrainementId")
+    protected abstract suspend fun lireSupersetEnCours(entrainementId: Long): SupersetEnCours?
+
+    @Query(
+        """
+        UPDATE superset_en_cours SET nom_a = :nomA, nom_b = :nomB, actif = :actif, poids_a = :poidsA,
+        repetitions_a = :repetitionsA, poids_b = :poidsB, repetitions_b = :repetitionsB
+        WHERE entrainement_id = :entrainementId AND superset_id = :supersetId
+        """,
+    )
+    protected abstract suspend fun memoriserSupersetBrut(
+        entrainementId: Long,
+        supersetId: String,
+        nomA: String,
+        nomB: String,
+        actif: RoleSuperset,
+        poidsA: String,
+        repetitionsA: String,
+        poidsB: String,
+        repetitionsB: String,
+    )
+
+    @Query(
+        """
+        UPDATE superset_en_cours SET actif = 'A', poids_a = '', repetitions_a = '', poids_b = '', repetitions_b = ''
+        WHERE entrainement_id = :entrainementId
+        """,
+    )
+    protected abstract suspend fun reinitialiserSuperset(entrainementId: Long)
+
+    @Query("DELETE FROM superset_en_cours WHERE entrainement_id = :entrainementId")
+    protected abstract suspend fun supprimerSupersetEnCours(entrainementId: Long)
+
+    @Query("SELECT * FROM exercice WHERE superset_id = :supersetId")
+    protected abstract suspend fun lireExercicesSuperset(supersetId: String): List<Exercice>
+
+    @Query("SELECT * FROM exercice WHERE superset_id = :supersetId AND id != :exerciceId LIMIT 1")
+    protected abstract suspend fun lirePartenaire(supersetId: String, exerciceId: Long): Exercice?
+
+    @Query("SELECT MAX(s.ordre) FROM serie s JOIN exercice x ON x.id = s.exercice_id WHERE x.superset_id = :supersetId")
+    protected abstract suspend fun lireDernierTourSuperset(supersetId: String): Int?
+
+    @Query("SELECT MAX(ordre) FROM serie WHERE exercice_id = :exerciceId")
+    protected abstract suspend fun lireDernierOrdre(exerciceId: Long): Int?
+
+    @Query("SELECT * FROM serie WHERE exercice_id = :exerciceId AND ordre = :ordre LIMIT 1")
+    protected abstract suspend fun lireSerieTour(exerciceId: Long, ordre: Int): Serie?
+
+    @Query("SELECT * FROM serie WHERE exercice_id = :exerciceId")
+    protected abstract suspend fun lireSeries(exerciceId: Long): List<Serie>
+
+    @Query("UPDATE serie SET ordre = :ordre WHERE id = :id")
+    protected abstract suspend fun modifierOrdreSerie(id: Long, ordre: Int)
+
+    /** Un exercice resté seul de son superset (l'autre supprimé, ou jamais enregistré) redevient ordinaire. */
+    @Query(
+        """
+        UPDATE exercice SET superset_id = NULL, superset_role = NULL
+        WHERE entrainement_id = :entrainementId AND superset_id IS NOT NULL
+        AND (SELECT COUNT(*) FROM exercice y WHERE y.superset_id = exercice.superset_id) < 2
+        """,
+    )
+    protected abstract suspend fun dissoudreSupersetsIncomplets(entrainementId: Long)
 
     @Query(
         """

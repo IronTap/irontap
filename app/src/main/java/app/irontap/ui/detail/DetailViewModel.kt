@@ -17,7 +17,9 @@ import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.Horloge
+import app.irontap.donnees.RoleSuperset
 import app.irontap.donnees.SerieAvecPaliers
+import app.irontap.donnees.ValeursPalier
 import app.irontap.logique.LecturePaliers
 import app.irontap.logique.Suggestion
 import app.irontap.logique.ajouterPoids
@@ -25,6 +27,8 @@ import app.irontap.logique.ajouterRepetitions
 import app.irontap.logique.decrireSerie
 import app.irontap.logique.formaterPoids
 import app.irontap.logique.lirePaliers
+import app.irontap.logique.lirePoids
+import app.irontap.logique.lireRepetitions
 import app.irontap.logique.suggerer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,12 +54,47 @@ sealed interface EtatDetail {
  * Feuille d'édition : [serie] `null` pour « Ajouter une série ». [tableau] : tableau des paliers (7·D), pour une
  * dégressive ou après « + Ajouter un palier » ; sinon écran 7 avec ses boutons +X.
  */
-data class EditionSerie(val exercice: Exercice, val serie: SerieAvecPaliers?, val tableau: Boolean = false)
+data class EditionSerie(
+    val exercice: Exercice,
+    val serie: SerieAvecPaliers?,
+    val tableau: Boolean = false,
+    /** Appui sur « — » d'un superset : la série manquante est ajoutée à ce tour, pas en dernier. */
+    val tour: Int? = null,
+)
+
+/**
+ * Feuille « Ajouter un tour » (3·S+ T1), ou « Modifier le tour N » ([existant]) : A et B ensemble, au clavier.
+ * [indications] : valeurs du tour précédent, en placeholder ; [precedent] : son numéro.
+ */
+data class EditionTour(
+    val a: Exercice,
+    val b: Exercice,
+    val tour: Int,
+    val existant: Boolean,
+    val series: Map<RoleSuperset, SerieAvecPaliers>,
+    val indications: Map<RoleSuperset, ValeursPalier> = emptyMap(),
+    val precedent: Int? = null,
+) {
+    fun exercice(role: RoleSuperset) = if (role == RoleSuperset.A) a else b
+}
+
+/** « Supprimer le tour N ? » (H) : les séries de A et de B de ce tour, s'il y en a. */
+data class SuppressionTour(val a: Exercice, val b: Exercice, val tour: TourSuperset)
 
 /** Champs d'un palier de la feuille d'édition. [cle] identifie la ligne (focus, erreurs) quand d'autres sont retirées. */
 class ChampsPalier(val cle: Long, poids: String = "", repetitions: String = "") {
     val poids = TextFieldState(poids)
     val repetitions = TextFieldState(repetitions)
+
+    /** Ni poids, ni répétitions : bloc ignoré par « Enregistrer le tour ». */
+    val vide get() = poids.text.isBlank() && repetitions.text.isBlank()
+
+    fun remplir(poids: String, repetitions: String) {
+        this.poids.setTextAndPlaceCursorAtEnd(poids)
+        this.repetitions.setTextAndPlaceCursorAtEnd(repetitions)
+    }
+
+    fun vider() = remplir("", "")
 }
 
 /** Série dont la suppression attend confirmation (6b). */
@@ -66,6 +105,8 @@ data class SuppressionSerie(val exercice: Exercice, val serie: SerieAvecPaliers)
 /** Ce que l'écran affiche par-dessus le détail, hors champs de saisie. */
 data class Panneaux(
     val edition: EditionSerie? = null,
+    val tour: EditionTour? = null,
+    val suppressionTour: SuppressionTour? = null,
     /**
      * Paliers de l'édition dont les répétitions manquent : clé de la ligne → texte au moment de la validation.
      * L'erreur disparaît dès que ce texte change.
@@ -109,6 +150,9 @@ class DetailViewModel(
 
     private fun champs(poids: String = "", repetitions: String = "") = ChampsPalier(prochaineCle++, poids, repetitions)
 
+    /** Champs de la feuille « Ajouter un tour » : un palier pour A, un pour B. */
+    val champsTour: Map<RoleSuperset, ChampsPalier> = RoleSuperset.entries.associateWith { champs() }
+
     /** Champ du dialogue « Renommer l'exercice ». */
     val nom = TextFieldState()
 
@@ -133,7 +177,7 @@ class DetailViewModel(
         // Une erreur disparaît dès que le champ fautif est modifié.
         viewModelScope.launch { texteNom.collect { _panneaux.update { it.copy(erreurNom = false) } } }
         viewModelScope.launch {
-            snapshotFlow { paliers.associate { it.cle to it.repetitions.text.toString() } }.collect { textes ->
+            snapshotFlow { (paliers + champsTour.values).associate { it.cle to it.repetitions.text.toString() } }.collect { textes ->
                 _panneaux.update { panneaux ->
                     panneaux.copy(paliersEnErreur = panneaux.paliersEnErreur.filter { (cle, texte) -> textes[cle] == texte })
                 }
@@ -165,11 +209,11 @@ class DetailViewModel(
      * Appui sur une série ([serie]) ou sur « Ajouter une série » (`null`) : un palier vide, ou les paliers de la
      * série ; une dégressive s'ouvre en tableau (7·D).
      */
-    fun ouvrirEdition(exercice: Exercice, serie: SerieAvecPaliers?) {
+    fun ouvrirEdition(exercice: Exercice, serie: SerieAvecPaliers?, tour: Int? = null) {
         paliers.clear()
         serie?.paliers?.forEach { paliers += champs(it.poidsKg?.let(::formaterPoids).orEmpty(), it.repetitions.toString()) }
         if (paliers.isEmpty()) paliers += champs()
-        _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie, tableau = paliers.size > 1)) }
+        _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie, tableau = paliers.size > 1, tour = tour)) }
     }
 
     /** Boutons +X de l'écran 7 (série simple : palier principal). */
@@ -206,7 +250,7 @@ class DetailViewModel(
             }
             is LecturePaliers.Valide -> ecrire(apres = ::fermerEdition) {
                 if (edition.serie == null) {
-                    dao.ajouterSerie(edition.exercice.id, lecture.paliers, horloge.maintenant())
+                    dao.ajouterSerie(edition.exercice.id, lecture.paliers, horloge.maintenant(), ordre = edition.tour)
                 } else {
                     dao.modifierSerie(edition.serie.serie.id, lecture.paliers, horloge.maintenant())
                 }
@@ -215,6 +259,91 @@ class DetailViewModel(
     }
 
     fun fermerEdition() = _panneaux.update { it.copy(edition = null, paliersEnErreur = emptyMap(), erreurEnregistrement = false) }
+
+    // --- Tours d'un superset (maquettes H, 3·S+ T1) ---
+
+    /**
+     * « + Ajouter un tour » : champs vides ; en indication, la dernière série de chaque exercice (celle du tour
+     * précédent, ou d'un tour antérieur s'il lui manque une série, comme la maquette T1).
+     */
+    fun ouvrirAjoutTour(bloc: BlocDetail.Superset) {
+        val precedent = bloc.tours.lastOrNull()
+        champsTour.values.forEach { it.vider() }
+        val indications = buildMap {
+            RoleSuperset.entries.forEach { role -> bloc.exercice(role).series.lastOrNull()?.valeurs?.firstOrNull()?.let { put(role, it) } }
+        }
+        val tour = (precedent?.numero ?: 0) + 1
+        _panneaux.update { Panneaux(tour = EditionTour(bloc.a.exercice, bloc.b.exercice, tour, existant = false, series = emptyMap(), indications, precedent?.numero)) }
+    }
+
+    /** Appui sur le numéro d'un tour : « Modifier le tour N », palier principal de A et de B pré-remplis. */
+    fun ouvrirModificationTour(bloc: BlocDetail.Superset, tour: TourSuperset) {
+        val series = buildMap { RoleSuperset.entries.forEach { role -> tour.serie(role)?.let { put(role, it) } } }
+        RoleSuperset.entries.forEach { role ->
+            val principal = series[role]?.valeurs?.firstOrNull()
+            champsTour.getValue(role).remplir(principal?.poidsKg?.let(::formaterPoids).orEmpty(), principal?.repetitions?.toString().orEmpty())
+        }
+        _panneaux.update { Panneaux(tour = EditionTour(bloc.a.exercice, bloc.b.exercice, tour.numero, existant = true, series = series)) }
+    }
+
+    /** Au moins un bloc rempli : « Enregistrer le tour » est actif. */
+    fun tourEnregistrable() = champsTour.values.any { !it.vide }
+
+    /**
+     * « Enregistrer le tour » : un bloc vide est ignoré (la série de ce tour, s'il en a une, ne change pas) ; un bloc
+     * rempli demande des répétitions. Le palier principal saisi remplace celui de la série, ses paliers dégressifs
+     * sont gardés.
+     */
+    fun enregistrerTour() {
+        val edition = _panneaux.value.tour ?: return
+        if (occupe || !tourEnregistrable()) return
+        val fautifs = champsTour.values.filter { !it.vide && lireRepetitions(it.repetitions.text.toString()) == null }
+        if (fautifs.isNotEmpty()) {
+            _panneaux.update { panneaux -> panneaux.copy(paliersEnErreur = fautifs.associate { it.cle to it.repetitions.text.toString() }) }
+            return
+        }
+        val paliers = RoleSuperset.entries.associateWith { role ->
+            val champs = champsTour.getValue(role)
+            if (champs.vide) return@associateWith null
+            val principal = ValeursPalier(lirePoids(champs.poids.text.toString()), lireRepetitions(champs.repetitions.text.toString())!!)
+            listOf(principal) + edition.series[role]?.valeurs?.drop(1).orEmpty()
+        }
+        ecrire(apres = ::fermerTour) {
+            // Superset défait entre-temps (série supprimée) : rien à écrire, la feuille se ferme.
+            dao.ecrireTour(
+                exerciceA = edition.a.id,
+                exerciceB = edition.b.id,
+                tour = edition.tour.takeIf { edition.existant },
+                a = paliers[RoleSuperset.A],
+                b = paliers[RoleSuperset.B],
+                maintenant = horloge.maintenant(),
+            )
+        }
+    }
+
+    fun fermerTour() = _panneaux.update { it.copy(tour = null, paliersEnErreur = emptyMap(), erreurEnregistrement = false) }
+
+    /** Balayage d'un tour, ou « Supprimer le tour » de sa feuille : choix A, B ou les deux, après confirmation. */
+    fun demanderSuppressionTour(bloc: BlocDetail.Superset, tour: TourSuperset) =
+        _panneaux.update { it.copy(suppressionTour = SuppressionTour(bloc.a.exercice, bloc.b.exercice, tour), erreurEnregistrement = false) }
+
+    fun annulerSuppressionTour() = _panneaux.update { it.copy(suppressionTour = null, erreurEnregistrement = false) }
+
+    /** Supprime la série de A, de B, ou les deux ([roles]) ; un tour devenu vide disparaît (cf. [EntrainementDao.supprimerSerie]). */
+    fun confirmerSuppressionTour(roles: Set<RoleSuperset>) {
+        val suppression = _panneaux.value.suppressionTour ?: return
+        val ids = roles.mapNotNull { suppression.tour.serie(it)?.serie?.id }
+        if (ids.isEmpty()) return
+        // La ligne reste ouverte jusqu'à disparaître ; elle se referme si sa série A reste (seul B supprimé).
+        val revelee = suppression.tour.a?.takeIf { RoleSuperset.A in roles }?.serie?.id
+            ?: suppression.tour.b?.takeIf { suppression.tour.a == null }?.serie?.id
+        _panneaux.update { panneaux ->
+            // La feuille de ce tour se ferme avec lui.
+            val tour = panneaux.tour?.takeUnless { it.existant && it.a.id == suppression.a.id && it.tour == suppression.tour.numero }
+            panneaux.copy(suppressionTour = null, tour = tour, serieEnSuppression = revelee)
+        }
+        ecrire(echec = { it.copy(suppressionTour = suppression, serieEnSuppression = null) }) { dao.supprimerSeries(ids) }
+    }
 
     // --- Suppression d'une série (6b) ---
 

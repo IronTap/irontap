@@ -141,6 +141,33 @@ object Typo {
     /** Badge « ↓ dégressive » de l'en-tête de saisie : 11 / 500 (hérité du numéro de série dans la maquette). */
     val Badge = style(11)
 
+    /** Pastilles de la ligne du nom (« Superset », « Historique A ») : 13 / 500, interligne naturel. */
+    val Pastille = style(13).interligneNaturel()
+
+    /** Nom d'un onglet de superset (S3) : 16 / 500, interligne naturel (champ). */
+    val Onglet = style(16).interligneNaturel()
+
+    /** Lettre A / B des onglets et de la feuille « Ajouter un tour » : 11 / 600. */
+    val BadgeOnglet = style(11, FontWeight.SemiBold).interligneNaturel()
+
+    /** Lettre A / B de l'en-tête de la carte superset du détail (H) : 10 / 600. */
+    val BadgeOngletPetit = style(10, FontWeight.SemiBold).interligneNaturel()
+
+    /** Noms A et B de l'en-tête de la carte superset du détail (H) : 15 / 500. */
+    val TitreCarte = style(15)
+
+    /** Valeur des champs de la feuille « Ajouter un tour » (3·S+ T1) : 28 / 500, interligne naturel. */
+    val ValeurTour = style(28).interligneNaturel()
+
+    /** Unité « kg » de la feuille « Ajouter un tour » : 17 / 400. */
+    val UniteTour = style(17, FontWeight.Normal).interligneNaturel()
+
+    /** « × » entre poids et répétitions de la feuille « Ajouter un tour » : 20 / 400. */
+    val SigneTour = style(20, FontWeight.Normal).interligneNaturel()
+
+    /** Étiquette « En superset avec … » de la popup d'historique (S4) : 12 / 400. */
+    val EtiquetteSuperset = style(12, FontWeight.Normal)
+
     /**
      * Aperçu de l'export (écran 8) : 12 / 400 en chasse fixe, interligne 1,55. Police monospace du système :
      * rien à embarquer pour un seul bloc de texte.

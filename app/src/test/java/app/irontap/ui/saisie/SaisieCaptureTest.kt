@@ -29,6 +29,9 @@ import app.irontap.donnees.EtatChrono.Etat
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.PalierEnCours
+import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.SaisieOnglet
+import app.irontap.donnees.SupersetEnCours
 import app.irontap.donnees.ValeursPalier
 import app.irontap.donnees.serieDeTest
 import app.irontap.logique.HistoriqueExercice
@@ -83,6 +86,9 @@ class SaisieCaptureTest {
         override fun terminer(avecSerie: Boolean) = Unit
         override fun ouvrirHistorique() = Unit
         override fun fermerHistorique() = Unit
+        override fun commencerSuperset() = Unit
+        override fun basculer(role: RoleSuperset) = Unit
+        override fun memoriserSaisie() = Unit
     }
 
     private fun afficher(
@@ -98,12 +104,14 @@ class SaisieCaptureTest {
         hauteurVisible: Dp? = null,
         actions: ActionsSaisie = SansAction(),
         paliersEnCours: List<PalierEnCours> = emptyList(),
+        superset: SupersetEnCours? = null,
+        onglets: OngletsSuperset? = null,
     ) {
         compose.setContent {
             IronTapTheme {
                 Box(if (hauteurVisible != null) Modifier.height(hauteurVisible) else Modifier) {
                     ContenuSaisie(
-                        etat = EtatSaisie.EnCours(entrainement, exercices, chrono, paliersEnCours),
+                        etat = EtatSaisie.EnCours(entrainement, exercices, chrono, paliersEnCours, superset),
                         formulaire = formulaire,
                         suggestions = suggestions,
                         historiqueDisponible = historiqueDisponible,
@@ -112,6 +120,7 @@ class SaisieCaptureTest {
                         repetitions = TextFieldState(repetitions),
                         realtime = { 72_000 },
                         actions = actions,
+                        onglets = onglets,
                     )
                 }
             }
@@ -320,5 +329,96 @@ class SaisieCaptureTest {
         degressive(50.0 to 10, 30.0 to 8, poids = "20")
         compose.onNode(hasText("50 kg × 10 ↓ 30 kg × 8 ↓ …")).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
+    }
+
+    // --- Superset (3·S) ---
+
+    private val epaules = Entrainement(1, LocalDate.of(2026, 10, 15), "Épaules / bras", t0, nouvelExercice = true)
+
+    /** Deux exercices déjà faits : le suivant est l'exercice 3, comme la maquette. */
+    private val avantSuperset = listOf(
+        ExerciceAvecSeries(Exercice(1, 1, "Développé militaire", 1), listOf(serieDeTest(1, 1, 1, 30.0, 10, t0))),
+        ExerciceAvecSeries(Exercice(2, 1, "Oiseau", 2), listOf(serieDeTest(2, 2, 1, 6.0, 12, t0))),
+    )
+
+    /** S1 : avant la première série, pastille « Superset » sur la ligne du libellé. */
+    @Test
+    fun supersetPastille() {
+        afficher(exercices = avantSuperset, entrainement = epaules, chrono = EtatChrono(1, Etat.EnCours, demarreA = 0), nom = "Oiseau haltères")
+        compose.onNode(hasClickAction() and hasText("Superset")).assertIsDisplayed()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** S2 : exercice avec historique, pastille et bouton historique cohabitent sans réduire le champ. */
+    @Test
+    fun supersetEtHistorique() {
+        afficher(
+            exercices = avantSuperset,
+            entrainement = epaules,
+            chrono = EtatChrono(1, Etat.EnCours, demarreA = 0),
+            nom = "Développé couché",
+            historiqueDisponible = true,
+        )
+        compose.onNode(hasContentDescription("Historique de l’exercice")).assertWidthIsEqualTo(52.dp)
+        compose.onNode(hasClickAction() and hasText("Superset")).assertIsDisplayed()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** Superset au tour 2 : A (Élévations latérales) et B (Curl marteau) ont chacun une série. */
+    private val supersetTour2 = avantSuperset + listOf(
+        ExerciceAvecSeries(Exercice(3, 1, "Élévations latérales", 3, "s1", RoleSuperset.A), listOf(serieDeTest(3, 3, 1, 8.0, 15, t0))),
+        ExerciceAvecSeries(Exercice(4, 1, "Curl marteau", 4, "s1", RoleSuperset.B), listOf(serieDeTest(4, 4, 1, 12.0, 12, t0))),
+    )
+
+    private fun supersetB(formulaire: Formulaire = Formulaire()) = afficher(
+        exercices = supersetTour2,
+        entrainement = epaules.copy(nouvelExercice = false),
+        chrono = EtatChrono(1, Etat.EnCours, demarreA = 72_000 - 4_000),
+        formulaire = formulaire,
+        historiqueDisponible = true,
+        nom = "Curl marteau",
+        poids = "12",
+        superset = SupersetEnCours(1, "s1", "Élévations latérales", "Curl marteau", RoleSuperset.B, "8", "12"),
+        onglets = OngletsSuperset(RoleSuperset.B, mapOf(RoleSuperset.A to "Élévations latérales", RoleSuperset.B to "Curl marteau")),
+    )
+
+    /** S3 : série 2, A déjà saisi (8 kg × 12), saisie de B, pastille « Historique B ». */
+    @Test
+    fun supersetOngletB() {
+        supersetB()
+        compose.onNode(hasText("Superset · saisie de B")).assertIsDisplayed()
+        compose.onNode(hasText("Exercice 3 · Série 2")).assertIsDisplayed()
+        compose.onNode(hasClickAction() and hasText("Historique B")).assertIsDisplayed()
+        compose.onNode(hasClickAction() and hasText("Élévations latérales")).assertIsDisplayed()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** S4 : popup historique de B, séance faite en superset signalée. */
+    @Test
+    fun supersetHistoriqueB() {
+        supersetB(
+            Formulaire(
+                historique = HistoriqueExercice(
+                    "Curl marteau",
+                    listOf(
+                        SeanceHistorique("Épaules / bras — 15/10/2026", lignes("12 × 12 kg", "10 × 12 kg", "10 × 10 kg"), superset = "Élévations latérales"),
+                        SeanceHistorique("Épaules / bras — 08/10/2026", lignes("12 × 14 kg", "10 × 14 kg", "10 × 12 kg")),
+                        SeanceHistorique("Épaules / bras — 01/10/2026", lignes("12 × 10 kg", "10 × 12 kg")),
+                    ),
+                ),
+            ),
+        )
+        compose.waitForIdle()
+        compose.onNode(hasText("En superset avec Élévations latérales")).assertIsDisplayed()
+        captureScreenRoboImage()
+    }
+
+    /** S5 : « Terminer » avec A saisi et B vide. */
+    @Test
+    fun supersetFinIncomplete() {
+        supersetB(Formulaire(dialogue = DialogueFin.SupersetIncomplet(RoleSuperset.A, SaisieOnglet("", 8.0, 12), "8 kg × 12")))
+        compose.waitForIdle()
+        compose.onNode(hasText("Enregistrer A seul et terminer")).assertIsDisplayed()
+        captureScreenRoboImage()
     }
 }

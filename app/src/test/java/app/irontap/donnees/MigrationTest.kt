@@ -19,8 +19,9 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * Migration v1 → v2 (séries dégressives) : une base v1 est créée avec le schéma exporté (`schemas/…/1.json`),
- * puis ouverte par Room, qui applique la migration et vérifie que le résultat est exactement le schéma v2.
+ * Migrations v1 → v2 (séries dégressives) et v2 → v3 (supersets) : une base est créée avec le schéma exporté de sa
+ * version (`schemas/…/N.json`), puis ouverte par Room, qui applique les migrations et vérifie que le résultat est
+ * exactement le schéma courant.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -37,8 +38,11 @@ class MigrationTest {
     }
 
     /** Base v1 telle que Room l'aurait créée, remplie par [remplir]. */
-    private fun creerV1(remplir: SQLiteDatabase.() -> Unit) {
-        val schema = JSONObject(File("schemas/app.irontap.donnees.BaseIronTap/1.json").readText()).getJSONObject("database")
+    private fun creerV1(remplir: SQLiteDatabase.() -> Unit) = creer(1, remplir)
+
+    /** Base de la [version] donnée telle que Room l'aurait créée, remplie par [remplir]. */
+    private fun creer(version: Int, remplir: SQLiteDatabase.() -> Unit) {
+        val schema = JSONObject(File("schemas/app.irontap.donnees.BaseIronTap/$version.json").readText()).getJSONObject("database")
         fichier.parentFile?.mkdirs()
         SQLiteDatabase.openOrCreateDatabase(fichier, null).use { db ->
             val entites = schema.getJSONArray("entities")
@@ -53,14 +57,14 @@ class MigrationTest {
             }
             val initialisation = schema.getJSONArray("setupQueries")
             for (i in 0 until initialisation.length()) db.execSQL(initialisation.getString(i))
-            db.version = 1
+            db.version = version
             db.remplir()
         }
     }
 
     private fun ouvrir(): EntrainementDao =
         Room.databaseBuilder(context, BaseIronTap::class.java, fichier.name)
-            .addMigrations(Migration1Vers2)
+            .addMigrations(Migration1Vers2, Migration2Vers3)
             .allowMainThreadQueries()
             .build()
             .also { base = it }
@@ -115,5 +119,31 @@ class MigrationTest {
         creerV1 {}
         val dao = ouvrir()
         assertEquals(emptyList<Entrainement>(), dao.observerHistorique().first())
+    }
+
+    @Test
+    fun `v2 vers v3, aucun exercice en superset et la degressive en attente conservee`() = runTest {
+        creer(2) {
+            execSQL("INSERT INTO entrainement VALUES (1, '2026-10-12', NULL, 1000, 2000, 0)")
+            execSQL("INSERT INTO entrainement VALUES (2, '2026-10-14', NULL, 3000, NULL, 0)")
+            execSQL("INSERT INTO exercice VALUES (10, 1, 'Tirage vertical', 1)")
+            execSQL("INSERT INTO exercice VALUES (11, 2, 'Squat', 1)")
+            execSQL("INSERT INTO serie VALUES (100, 10, 1, 1100, NULL)")
+            execSQL("INSERT INTO palier VALUES (1, 100, 1, 45.0, 10)")
+            execSQL("INSERT INTO palier VALUES (2, 100, 2, 30.0, 8)")
+            execSQL("INSERT INTO palier_en_cours VALUES (1, 2, 1, 100.0, 5)")
+            execSQL("INSERT INTO etat_chrono VALUES (2, 'EnCours', 900, 0)")
+        }
+        val dao = ouvrir()
+
+        val termine = checkNotNull(dao.lireComplet(1))
+        assertEquals(Exercice(10, 1, "Tirage vertical", 1), termine.exercices.single().exercice)
+        assertEquals(listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8)), termine.exercices.single().series.single().valeurs)
+        val enCours = checkNotNull(dao.observerEnCoursComplet().first())
+        assertEquals(listOf(PalierEnCours(1, 2, 1, 100.0, 5, role = null)), enCours.paliersEnCours)
+        assertEquals(null, enCours.superset)
+        // Un superset peut ensuite commencer sur un nouvel exercice.
+        dao.enregistrerSerie(2, "", null, 6, EntrainementDao.Suite.NouvelExercice, Instant.ofEpochMilli(4000), 1000)
+        assertTrue(dao.commencerSuperset(2, "Curl", "s1") != null)
     }
 }

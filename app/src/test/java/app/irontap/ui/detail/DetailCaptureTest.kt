@@ -18,6 +18,8 @@ import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.SerieAvecPaliers
+import app.irontap.donnees.ValeursPalier
+import app.irontap.donnees.RoleSuperset
 import app.irontap.donnees.serieDeTest
 import app.irontap.logique.Suggestion
 import app.irontap.ui.theme.IronTapTheme
@@ -79,6 +81,10 @@ class DetailCaptureTest {
         override fun ajouterSerie(exercice: Exercice) = Unit
         override fun supprimerSerie(exercice: Exercice, serie: SerieAvecPaliers) = Unit
         override fun renommer(exercice: Exercice) = Unit
+        override fun ajouterSerieAuTour(exercice: Exercice, tour: Int) = Unit
+        override fun ajouterTour(bloc: BlocDetail.Superset) = Unit
+        override fun modifierTour(bloc: BlocDetail.Superset, tour: TourSuperset) = Unit
+        override fun supprimerTour(bloc: BlocDetail.Superset, tour: TourSuperset) = Unit
     }
 
     private object SansEdition : ActionsEdition {
@@ -208,6 +214,63 @@ class DetailCaptureTest {
         compose.onNode(hasContentDescription("Poids du palier 1")).assertWidthIsEqualTo(100.dp)
         val large = compose.onNode(hasContentDescription("Poids du palier 3")).fetchSemanticsNode().size.width
         assertTrue(large > compose.onNode(hasContentDescription("Poids du palier 1")).fetchSemanticsNode().size.width)
+        captureScreenRoboImage()
+    }
+
+    // --- Superset (H, 3·S+ T1) ---
+
+    private val epaules = EntrainementComplet(
+        Entrainement(2, LocalDate.of(2026, 10, 15), "Épaules / bras", t0, termineLe = t0),
+        listOf(
+            exercice(10, "Développé militaire", s(30.0, 10), s(32.5, 8)),
+            exercice(11, "Élévations latérales", s(8.0, 15), s(8.0, 12), s(6.0, 12), s(6.0, 10)).let {
+                it.copy(exercice = it.exercice.copy(supersetId = "s1", supersetRole = RoleSuperset.A))
+            },
+            exercice(12, "Curl marteau", s(12.0, 12), s(12.0, 10), s(10.0, 10)).let {
+                it.copy(exercice = it.exercice.copy(supersetId = "s1", supersetRole = RoleSuperset.B))
+            },
+        ),
+    )
+
+    /** H : A et B dans une carte, une ligne par tour, « — » pour la série manquante du tour 4. */
+    @Test
+    fun superset() {
+        compose.setContent {
+            IronTapTheme { ContenuDetail(epaules, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
+        }
+        compose.onNode(hasText("—")).assertIsDisplayed()
+        compose.onNode(hasText("Ajouter un tour")).assertIsDisplayed()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** T1 : « Ajouter un tour », A et B dans la même feuille, valeurs du tour précédent en indication. */
+    @Test
+    fun ajoutTour() {
+        val a = epaules.exercices[1].exercice
+        val b = epaules.exercices[2].exercice
+        val champs = mapOf(RoleSuperset.A to ChampsPalier(-1, "6"), RoleSuperset.B to ChampsPalier(-2))
+        compose.setContent {
+            IronTapTheme {
+                ContenuDetail(epaules, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction())
+                FeuilleTour(
+                    edition = EditionTour(
+                        a, b, tour = 5, existant = false, series = emptyMap(),
+                        indications = mapOf(RoleSuperset.A to ValeursPalier(6.0, 10), RoleSuperset.B to ValeursPalier(10.0, 10)),
+                        precedent = 4,
+                    ),
+                    champs = champs,
+                    paliersEnErreur = emptySet(),
+                    erreurEnregistrement = false,
+                    enregistrable = true,
+                    onEnregistrer = {},
+                    onSupprimer = {},
+                    onFermer = {},
+                )
+            }
+        }
+        compose.onNode(hasContentDescription("Poids de l’exercice A")).requestFocus()
+        compose.waitForIdle()
+        compose.onNode(hasText("Valeurs du tour 4 en indication. Laisse B vide pour ajouter A seul.")).assertIsDisplayed()
         captureScreenRoboImage()
     }
 }

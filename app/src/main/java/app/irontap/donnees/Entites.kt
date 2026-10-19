@@ -26,7 +26,11 @@ data class Entrainement(
     @ColumnInfo(name = "nouvel_exercice") val nouvelExercice: Boolean = false,
 )
 
-/** Un mouvement de l'entraînement. [ordre] commence à 1. */
+/**
+ * Un mouvement de l'entraînement. [ordre] commence à 1. Les deux exercices d'un superset (spec §4.3.10)
+ * partagent [supersetId] et ont des [ordre] consécutifs, A puis B ; le numéro d'une série y est celui
+ * de son tour (A et B du même tour ont le même [Serie.ordre]).
+ */
 @Entity(
     tableName = "exercice",
     foreignKeys = [
@@ -37,14 +41,25 @@ data class Entrainement(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index("entrainement_id")],
+    indices = [Index("entrainement_id"), Index("superset_id")],
 )
 data class Exercice(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "entrainement_id") val entrainementId: Long,
     val nom: String,
     val ordre: Int,
+    @ColumnInfo(name = "superset_id") val supersetId: String? = null,
+    @ColumnInfo(name = "superset_role") val supersetRole: RoleSuperset? = null,
 )
+
+/** Place d'un exercice dans son superset : A (le premier) ou B. */
+enum class RoleSuperset {
+    A,
+    B,
+    ;
+
+    val autre get() = if (this == A) B else A
+}
 
 /**
  * Une exécution d'un exercice. [ordre] commence à 1. Ses poids et répétitions sont dans ses [Palier] :
@@ -120,8 +135,40 @@ data class PalierEnCours(
     val ordre: Int,
     @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
     val repetitions: Int,
+    /** Onglet du superset en cours qui garde ce palier ; vide hors superset. */
+    val role: RoleSuperset? = null,
 ) {
     val valeurs get() = ValeursPalier(poidsKg, repetitions)
+}
+
+/**
+ * Superset en cours de saisie (spec §4.3.10) : noms des onglets tant qu'ils ne sont pas verrouillés, onglet
+ * actif et valeurs saisies (texte brut des champs), pour être retrouvés si l'appli est tuée. Supprimé quand
+ * le superset se termine (« Nouvel exercice », fin de l'entraînement).
+ */
+@Entity(
+    tableName = "superset_en_cours",
+    foreignKeys = [
+        ForeignKey(
+            entity = Entrainement::class,
+            parentColumns = ["id"],
+            childColumns = ["entrainement_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class SupersetEnCours(
+    @PrimaryKey @ColumnInfo(name = "entrainement_id") val entrainementId: Long,
+    @ColumnInfo(name = "superset_id") val supersetId: String,
+    @ColumnInfo(name = "nom_a") val nomA: String = "",
+    @ColumnInfo(name = "nom_b") val nomB: String = "",
+    val actif: RoleSuperset = RoleSuperset.A,
+    @ColumnInfo(name = "poids_a") val poidsA: String = "",
+    @ColumnInfo(name = "repetitions_a") val repetitionsA: String = "",
+    @ColumnInfo(name = "poids_b") val poidsB: String = "",
+    @ColumnInfo(name = "repetitions_b") val repetitionsB: String = "",
+) {
+    fun nom(role: RoleSuperset) = if (role == RoleSuperset.A) nomA else nomB
 }
 
 /** Poids et répétitions d'un palier, hors base (saisie, édition, affichage). [poidsKg] vide = poids du corps. */
@@ -205,6 +252,8 @@ data class EntrainementEnCours(
     /** Paliers d'une dégressive gardés par « Dégressive », triés par [PalierEnCours.ordre]. */
     @Relation(parentColumn = "id", entityColumn = "entrainement_id")
     val paliersEnCours: List<PalierEnCours> = emptyList(),
+    @Relation(parentColumn = "id", entityColumn = "entrainement_id")
+    val superset: SupersetEnCours? = null,
 )
 
 /** Un palier d'une série passée d'un exercice, avec sa série et sa séance (historique de l'exercice, spec §4.3.8). */
@@ -216,6 +265,8 @@ data class SerieHistorique(
     @ColumnInfo(name = "serie_id") val serieId: Long,
     @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
     val repetitions: Int,
+    /** Autre exercice du superset dont l'exercice faisait partie ce jour-là, `null` hors superset. */
+    val partenaire: String? = null,
 )
 
 /** Room ne garantit pas l'ordre des relations : on trie après lecture. */
@@ -228,3 +279,12 @@ internal fun List<ExerciceAvecSeries>.trie() = sortedBy { it.exercice.ordre }.ma
 internal fun EntrainementComplet.trie() = copy(exercices = exercices.trie())
 
 internal fun EntrainementEnCours.trie() = copy(exercices = exercices.trie(), paliersEnCours = paliersEnCours.sortedBy { it.ordre })
+
+/**
+ * Saisie d'un onglet pour un tour de superset : [nom] tel que saisi (ignoré pour un exercice déjà créé), puis
+ * palier courant [poidsKg] × [repetitions] ; [repetitions] `null` : seulement les paliers gardés par « Dégressive ».
+ */
+data class SaisieOnglet(val nom: String, val poidsKg: Double?, val repetitions: Int?)
+
+/** Tour de superset enregistré : son numéro et la série de chaque onglet enregistré. */
+data class TourEnregistre(val tour: Int, val series: Map<RoleSuperset, SerieAvecPaliers>)

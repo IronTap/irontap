@@ -10,6 +10,8 @@ import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
 import app.irontap.donnees.Horloge
 import app.irontap.donnees.ValeursPalier
+import app.irontap.donnees.SaisieOnglet
+import app.irontap.donnees.RoleSuperset
 import app.irontap.ui.ViewModelsDeTest
 import java.time.Instant
 import java.time.LocalDate
@@ -27,6 +29,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -309,5 +312,154 @@ class DetailViewModelTest {
         fautif.repetitions.setTextAndPlaceCursorAtEnd("8")
         Snapshot.sendApplyNotifications()
         assertTrue(vm.panneaux.value.paliersEnErreur.isEmpty())
+    }
+
+    // --- Supersets (maquettes H, 3·S+ T1) ---
+
+    /** Remplace l'entraînement du test par un superset terminé : A 8 × 15, 6 × 10 ; B 12 × 12, 10 × 10 ↓ 6 × 8. */
+    private suspend fun avecSuperset() {
+        dao.supprimerEntrainement(id)
+        id = checkNotNull(dao.creerEntrainement(LocalDate.of(2026, 10, 15), "Épaules / bras", Instant.EPOCH))
+        dao.commencerSuperset(id, "Élévations", "s1")
+        dao.enregistrerTour(id, SaisieOnglet("Élévations", 8.0, 15), SaisieOnglet("Curl marteau", 12.0, 12), false, Instant.EPOCH, 0)
+        dao.ajouterPalierEnCours(id, "", 10.0, 10, RoleSuperset.B)
+        dao.enregistrerTour(id, SaisieOnglet("", 6.0, 10), SaisieOnglet("", 6.0, 8), true, Instant.EPOCH, 0)
+        dao.terminer(id, Instant.EPOCH)
+    }
+
+    private suspend fun DetailViewModel.superset() =
+        blocsDetail(pret().complet.exercices).filterIsInstance<BlocDetail.Superset>().single()
+
+    private suspend fun tours() = blocsDetail(dao.lireComplet(id)!!.exercices).filterIsInstance<BlocDetail.Superset>().single().tours
+        .map { t -> Triple(t.numero, t.a?.valeurs, t.b?.valeurs) }
+
+    @Test
+    fun `carte superset par tours A et B`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        val bloc = vm.superset()
+        assertEquals("Élévations" to "Curl marteau", bloc.a.exercice.nom to bloc.b.exercice.nom)
+        assertEquals(
+            listOf(
+                Triple(1, listOf(ValeursPalier(8.0, 15)), listOf(ValeursPalier(12.0, 12))),
+                Triple(2, listOf(ValeursPalier(6.0, 10)), listOf(ValeursPalier(10.0, 10), ValeursPalier(6.0, 8))),
+            ),
+            tours(),
+        )
+    }
+
+    @Test
+    fun `ajouter un tour, bloc B vide ignore, valeurs du tour precedent en indication`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        vm.ouvrirAjoutTour(vm.superset())
+        val edition = checkNotNull(vm.panneaux.value.tour)
+        assertEquals(3 to false, edition.tour to edition.existant)
+        assertEquals(mapOf(RoleSuperset.A to ValeursPalier(6.0, 10), RoleSuperset.B to ValeursPalier(10.0, 10)), edition.indications)
+        assertFalse(vm.tourEnregistrable())
+
+        // Bloc rempli sans répétitions : signalé, rien n'est enregistré.
+        vm.champsTour.getValue(RoleSuperset.A).poids.setTextAndPlaceCursorAtEnd("6")
+        assertTrue(vm.tourEnregistrable())
+        vm.enregistrerTour()
+        assertEquals(setOf(vm.champsTour.getValue(RoleSuperset.A).cle), vm.panneaux.value.paliersEnErreur.keys)
+        vm.champsTour.getValue(RoleSuperset.A).repetitions.setTextAndPlaceCursorAtEnd("8")
+        vm.enregistrerTour()
+        vm.panneaux.attendre { it.tour == null }
+        assertEquals(Triple(3, listOf(ValeursPalier(6.0, 8)), null), tours().last())
+    }
+
+    @Test
+    fun `modifier un tour garde les paliers degressifs, case vide completee au tour`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        val bloc = vm.superset()
+        vm.ouvrirModificationTour(bloc, bloc.tours[1])
+        assertEquals(listOf("6" to "10", "10" to "10"), RoleSuperset.entries.map { vm.champsTour.getValue(it).let { c -> c.poids.text.toString() to c.repetitions.text.toString() } })
+        vm.champsTour.getValue(RoleSuperset.B).poids.setTextAndPlaceCursorAtEnd("11")
+        vm.enregistrerTour()
+        vm.panneaux.attendre { it.tour == null }
+        assertEquals(Triple(2, listOf(ValeursPalier(6.0, 10)), listOf(ValeursPalier(11.0, 10), ValeursPalier(6.0, 8))), tours()[1])
+
+        // Appui sur « — » : la série manquante est ajoutée à ce tour.
+        dao.supprimerSeries(listOf(bloc.tours[0].b!!.serie.id))
+        val sansB = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.size == 1 } as EtatDetail.Pret)
+        vm.ouvrirEdition(bloc.b.exercice, serie = null, tour = 1)
+        vm.paliers.single().repetitions.setTextAndPlaceCursorAtEnd("9")
+        vm.enregistrerEdition()
+        vm.panneaux.attendre { it.edition == null }
+        assertEquals(Triple(1, listOf(ValeursPalier(8.0, 15)), listOf(ValeursPalier(null, 9))), tours()[0])
+        assertEquals(2, sansB.complet.exercices.size)
+    }
+
+    @Test
+    fun `supprimer le tour N, A, B ou les deux`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        var bloc = vm.superset()
+        // Seul B : A reste, sa ligne se referme (aucune série encore affichée ne reste révélée).
+        vm.demanderSuppressionTour(bloc, bloc.tours[1])
+        vm.annulerSuppressionTour()
+        assertNull(vm.panneaux.value.suppressionTour)
+        vm.demanderSuppressionTour(bloc, bloc.tours[0])
+        vm.confirmerSuppressionTour(setOf(RoleSuperset.A))
+        assertEquals(bloc.tours[0].a!!.serie.id, vm.panneaux.value.serieEnSuppression)
+        assertNull(vm.panneaux.value.suppressionTour)
+        vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.size == 1 }
+        assertEquals(listOf(Triple(1, null, listOf(ValeursPalier(12.0, 12))), Triple(2, listOf(ValeursPalier(6.0, 10)), listOf(ValeursPalier(10.0, 10), ValeursPalier(6.0, 8)))), tours())
+
+        bloc = vm.superset()
+        vm.demanderSuppressionTour(bloc, bloc.tours[0])
+        vm.confirmerSuppressionTour(setOf(RoleSuperset.B))
+        vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.size == 1 }
+        // Le tour 1 vide disparaît : l'ancien tour 2 devient le 1.
+        assertEquals(listOf(Triple(1, listOf(ValeursPalier(6.0, 10)), listOf(ValeursPalier(10.0, 10), ValeursPalier(6.0, 8)))), tours())
+
+        bloc = vm.superset()
+        vm.demanderSuppressionTour(bloc, bloc.tours[0])
+        vm.confirmerSuppressionTour(RoleSuperset.entries.toSet())
+        vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.isEmpty() == true }
+    }
+
+    @Test
+    fun `supprimer B seul, la ligne du tour ne reste pas revelee`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        val bloc = vm.superset()
+        vm.demanderSuppressionTour(bloc, bloc.tours[0])
+        vm.confirmerSuppressionTour(setOf(RoleSuperset.B))
+        assertNull(vm.panneaux.value.serieEnSuppression)
+        vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.size == 1 }
+    }
+
+    @Test
+    fun `renumerotation annoncee seulement si le tour devient vide`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        val blocs = blocsDetail(vm.pret().complet.exercices)
+        val bloc = blocs.filterIsInstance<BlocDetail.Superset>().single()
+        // Tour 1 complet : supprimer A ne renumérote rien.
+        assertFalse(renumerotationApresSuppression(blocs, bloc.a.exercice.id, 1))
+        dao.supprimerSeries(listOf(bloc.tours[0].b!!.serie.id))
+        val apres = blocsDetail((vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.size == 1 } as EtatDetail.Pret).complet.exercices)
+        // Tour 1 sans B, un tour 2 après : supprimer A le vide et renumérote.
+        assertTrue(renumerotationApresSuppression(apres, bloc.a.exercice.id, 1))
+        // Dernier tour : rien à renuméroter.
+        assertFalse(renumerotationApresSuppression(apres, bloc.a.exercice.id, 2))
+    }
+
+    @Test
+    fun `ecrire un tour d'un superset defait ne plante pas`() = runTest {
+        avecSuperset()
+        val vm = ecran()
+        val bloc = vm.superset()
+        vm.ouvrirAjoutTour(bloc)
+        // B supprimé entre-temps : A redevient ordinaire.
+        dao.supprimerSeries(bloc.b.series.map { it.serie.id })
+        assertNull(dao.ecrireTour(bloc.a.exercice.id, bloc.b.exercice.id, null, listOf(ValeursPalier(6.0, 8)), null, Instant.EPOCH))
+        vm.champsTour.getValue(RoleSuperset.A).repetitions.setTextAndPlaceCursorAtEnd("8")
+        vm.enregistrerTour()
+        vm.panneaux.attendre { it.tour == null }
+        assertEquals(2, dao.lireComplet(id)!!.exercices.single().series.size)
     }
 }

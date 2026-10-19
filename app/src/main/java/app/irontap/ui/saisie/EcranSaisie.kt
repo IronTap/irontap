@@ -4,6 +4,16 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.Constraints
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import app.irontap.donnees.RoleSuperset
+import app.irontap.ui.composants.BadgeLettre
+import app.irontap.ui.composants.EtiquetteSuperset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -62,6 +72,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -122,7 +133,15 @@ interface ActionsSaisie {
     fun terminer(avecSerie: Boolean)
     fun ouvrirHistorique()
     fun fermerHistorique()
+    fun commencerSuperset()
+    fun basculer(role: RoleSuperset)
+
+    /** Écran en arrière-plan : ce qui doit survivre à un kill est mémorisé (superset). */
+    fun memoriserSaisie()
 }
+
+/** Onglets d'un superset à l'écran : l'onglet actif et le nom saisi dans chaque onglet (libellé de l'inactif). */
+data class OngletsSuperset(val actif: RoleSuperset, val nomsSaisis: Map<RoleSuperset, String>)
 
 private val AjoutsPoids = listOf(1, 5, 10, 20)
 private val AjoutsRepetitions = listOf(1, 2, 5, 10)
@@ -137,18 +156,24 @@ fun EcranSaisie(onQuitter: () -> Unit, vm: SaisieViewModel = viewModel(factory =
     val formulaire by vm.formulaire.collectAsStateWithLifecycle()
     val suggestions by vm.suggestions.collectAsStateWithLifecycle()
     val historiqueDisponible by vm.historiqueDisponible.collectAsStateWithLifecycle()
+    // Appli en arrière-plan : elle peut être tuée, un superset en cours est mémorisé.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.memoriserSaisie() }
     when (val e = etat) {
         is EtatSaisie.EnCours -> {
+            val champs = vm.champs(vm.ongletActif)
             ContenuSaisie(
                 etat = e,
                 formulaire = formulaire,
                 suggestions = suggestions,
                 historiqueDisponible = historiqueDisponible,
-                nom = vm.nom,
-                poids = vm.poids,
-                repetitions = vm.repetitions,
+                nom = champs.nom,
+                poids = champs.poids,
+                repetitions = champs.repetitions,
                 realtime = vm::realtime,
                 actions = vm,
+                onglets = e.superset?.let {
+                    OngletsSuperset(vm.ongletActif, RoleSuperset.entries.associateWith { role -> vm.champs(role).nom.text.toString() })
+                },
             )
             PrePermissionNotifications(chronoEnCours = e.chrono?.etat == EtatChrono.Etat.EnCours)
         }
@@ -170,8 +195,13 @@ fun ContenuSaisie(
     repetitions: TextFieldState,
     realtime: () -> Long,
     actions: ActionsSaisie,
+    /** Superset en cours : onglets A / B à la place du champ du nom (S3) ; [nom], [poids], [repetitions] sont ceux de l'onglet actif. */
+    onglets: OngletsSuperset? = null,
 ) {
     val focusManager = LocalFocusManager.current
+    val superset = etat.etatSuperset?.takeIf { onglets != null }
+    val actif = onglets?.actif ?: RoleSuperset.A
+    val nomModifiable = if (superset != null) superset.nomVerrouille(actif) == null else etat.nomVerrouille == null
     val densite = LocalDensity.current
     // Position du champ nom dans l'écran : la liste de suggestions se superpose au contenu qui suit.
     var positionRacine by remember { mutableStateOf(Offset.Zero) }
@@ -200,12 +230,29 @@ fun ContenuSaisie(
                 // Au moins la hauteur visible, pour pousser les actions en bas. Seul l'espace vide est extensible :
                 // quand le clavier réduit la hauteur visible, le contenu garde sa taille et défile.
                 Column(Modifier.heightIn(min = hauteurVisible)) {
-                    EnTete(etat)
+                    EnTete(etat, superset, actif)
                     Column(Modifier.padding(horizontal = 16.dp)) {
                         BandeauChrono(etat.chrono, realtime, actions)
                         Spacer(Modifier.height(14.dp))
-                        LibelleChamp("Nom de l’exercice")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LigneLibelleNom(if (superset != null) "Exercices du superset" else "Nom de l’exercice") {
+                            when {
+                                superset != null && historiqueDisponible -> PastilleHistorique(actif, actions::ouvrirHistorique)
+                                superset == null && etat.supersetPossible -> PastilleSuperset(actions::commencerSuperset)
+                            }
+                        }
+                        if (superset != null && onglets != null) {
+                            Onglets(
+                                superset = superset,
+                                onglets = onglets,
+                                nom = nom,
+                                onBasculer = actions::basculer,
+                                modifier = Modifier.onGloballyPositioned { ancreNom = it.positionInRoot() to it.size.width },
+                                modifierChamp = Modifier.onFocusChanged { focusNom = it.isFocused },
+                            )
+                            if (formulaire.erreurNom) {
+                                MessageErreur("Indique le nom de l’exercice", Modifier.padding(top = 5.dp))
+                            }
+                        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Column(Modifier.weight(1f)) {
                                 if (etat.nomVerrouille != null) {
                                     NomVerrouille(etat.nomVerrouille)
@@ -248,7 +295,7 @@ fun ContenuSaisie(
         }
 
         val ancre = ancreNom
-        if (focusNom && ancre != null && etat.nomVerrouille == null && suggestions.isNotEmpty()) {
+        if (focusNom && ancre != null && nomModifiable && suggestions.isNotEmpty()) {
             val (position, largeur) = ancre
             val decalage = position - positionRacine
             val haut = decalage.y.toInt() + with(densite) { (52 + 6).dp.roundToPx() }
@@ -277,6 +324,8 @@ fun ContenuSaisie(
     when (val dialogue = formulaire.dialogue) {
         null -> Unit
         is DialogueFin.AvecSerie -> DialogueFinAvecSerie(dialogue.serie.description, actions)
+        is DialogueFin.SupersetComplet -> DialogueFinAvecSerie(dialogue.description, actions)
+        is DialogueFin.SupersetIncomplet -> DialogueFinSupersetIncomplet(dialogue, actions)
         DialogueFin.Simple -> DialogueFinSimple(actions)
     }
     formulaire.historique?.let { DialogueHistorique(it, actions::fermerHistorique) }
@@ -285,9 +334,10 @@ fun ContenuSaisie(
 /**
  * En-tête de 52 dp : libellé (ou date) au-dessus de « Exercice N · Série M ». En dégressive (3·D A2, A3) :
  * paliers déjà gardés en accent-300 (« 50 kg × 10 ↓ … »), puis badge « ↓ dégressive » après le numéro.
+ * En superset (S3) : « 🔗 Superset · saisie de A » en accent-300, sauf dégressive en cours sur l'onglet actif.
  */
 @Composable
-private fun EnTete(etat: EtatSaisie.EnCours) {
+private fun EnTete(etat: EtatSaisie.EnCours, superset: EtatSuperset?, actif: RoleSuperset) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -295,8 +345,13 @@ private fun EnTete(etat: EtatSaisie.EnCours) {
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
     ) {
-        val chaine = etat.chaineDegressive
-        Text(
+        val chaine = if (superset != null) superset.chaineDegressive(actif) else etat.chaineDegressive
+        if (superset != null && chaine == null) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Icone(R.drawable.ic_link_simple_small, taille = 12.dp, couleur = Couleurs.Accent300)
+                Text("Superset · saisie de $actif", style = Typo.Petit, color = Couleurs.Accent300, maxLines = 1)
+            }
+        } else Text(
             text = chaine ?: etat.entrainement.libelle ?: formaterDate(etat.entrainement.date),
             style = Typo.Petit,
             color = if (chaine != null) Couleurs.Accent300 else Couleurs.Neutre400,
@@ -420,6 +475,172 @@ private fun NomVerrouille(nom: String) {
             modifier = Modifier.weight(1f),
         )
         Icone(R.drawable.ic_lock, taille = 18.dp, couleur = Couleurs.Neutre500, description = "Verrouillé")
+    }
+}
+
+// --- Superset (S1–S4) ---
+
+/**
+ * Ligne du libellé du nom : libellé à gauche, pastille éventuelle à droite, alignés en bas. La pastille (36 dp)
+ * déborde de 8 dp au-dessus et 2 dp au-dessous, comme la maquette : la ligne garde la hauteur du libellé.
+ */
+@Composable
+private fun LigneLibelleNom(texte: String, pastille: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Text(texte, style = Typo.Libelle, color = Couleurs.Neutre300, maxLines = 1, modifier = Modifier.weight(1f))
+        pastille()
+    }
+}
+
+/**
+ * Pastille de 36 dp (rayon 20, filet séparateur, 13 / 500, icône 14 dp, padding 12), dans une zone tactile de
+ * 48 dp. Elle occupe 26 dp dans la ligne (débord de 8 dp en haut et 2 dp en bas).
+ */
+@Composable
+private fun Pastille(texte: String, icone: Int, couleur: Color, fondAppuye: Color, description: String, onClick: () -> Unit) {
+    val interactions = remember { MutableInteractionSource() }
+    val appuye by interactions.collectIsPressedAsState()
+    val forme = RoundedCornerShape(20.dp)
+    Box(
+        modifier = Modifier
+            .layout { mesurable, contraintes ->
+                val zone = mesurable.measure(contraintes.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+                val hauteur = 26.dp.roundToPx()
+                // Pastille visible de -8 à 28 dp : zone tactile de 48 dp centrée sur elle.
+                layout(zone.width, hauteur) { zone.place(0, -(8 + 6).dp.roundToPx()) }
+            }
+            .height(48.dp)
+            .clickable(interactions, indication = null, role = Role.Button, onClickLabel = description, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            modifier = Modifier
+                .height(36.dp)
+                .clip(forme)
+                .background(if (appuye) fondAppuye else Color.Transparent)
+                .border(1.dp, Couleurs.Separateur, forme)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icone(icone, taille = 14.dp, couleur = couleur)
+            Text(texte, style = Typo.Pastille, color = couleur, maxLines = 1)
+        }
+    }
+}
+
+/** S1 : « 🔗 Superset », tant que l'exercice courant n'a ni série ni palier gardé. */
+@Composable
+private fun PastilleSuperset(onClick: () -> Unit) =
+    Pastille("Superset", R.drawable.ic_link_simple, Couleurs.Neutre300, Couleurs.Texte.copy(alpha = 0.07f), "Faire un superset", onClick)
+
+/** S3 : « 🕘 Historique A » (ou B), à la place de la pastille Superset, pour l'exercice de l'onglet actif. */
+@Composable
+private fun PastilleHistorique(actif: RoleSuperset, onClick: () -> Unit) =
+    Pastille("Historique $actif", R.drawable.ic_clock_counter_clockwise, Couleurs.Accent300, Couleurs.Accent800, "Historique de l’exercice $actif", onClick)
+
+/**
+ * Onglets A / B (S3), grille de 2 colonnes (gap 6, 52 dp). Actif sans série encore faite : champ du nom
+ * ([nom], [modifierChamp]) ; actif verrouillé : fond accent-900 ; inactif : contour pointillé, appui = bascule.
+ */
+@Composable
+private fun Onglets(
+    superset: EtatSuperset,
+    onglets: OngletsSuperset,
+    nom: TextFieldState,
+    onBasculer: (RoleSuperset) -> Unit,
+    modifier: Modifier,
+    modifierChamp: Modifier,
+) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        RoleSuperset.entries.forEach { role ->
+            val cellule = Modifier.weight(1f)
+            val verrouille = superset.nomVerrouille(role)
+            when {
+                role != onglets.actif -> OngletInactif(
+                    role = role,
+                    nom = verrouille ?: onglets.nomsSaisis[role].orEmpty().trim(),
+                    onClick = { onBasculer(role) },
+                    modifier = cellule,
+                )
+                verrouille != null -> OngletVerrouille(role, verrouille, cellule)
+                else -> OngletModifiable(role, nom, cellule.then(modifierChamp))
+            }
+        }
+    }
+}
+
+private fun nomParDefaut(role: RoleSuperset) = "Exercice $role"
+
+@Composable
+private fun OngletModifiable(role: RoleSuperset, nom: TextFieldState, modifier: Modifier) {
+    val filtre = remember { InputTransformation.maxLength(60) }
+    BasicTextField(
+        state = nom,
+        modifier = modifier.semantics { contentDescription = "Nom de l’exercice $role" },
+        inputTransformation = filtre,
+        textStyle = Typo.Onglet.copy(color = Couleurs.Texte),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next),
+        lineLimits = TextFieldLineLimits.SingleLine,
+        cursorBrush = SolidColor(Couleurs.Accent),
+        decorator = { champ ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .background(Couleurs.Surface, Formes.Grande)
+                    .border(2.dp, Couleurs.Accent, Formes.Grande)
+                    .padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                BadgeLettre(role)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                    if (nom.text.isEmpty()) Text(nomParDefaut(role), style = Typo.Onglet, color = Couleurs.Neutre600, maxLines = 1)
+                    champ()
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun OngletVerrouille(role: RoleSuperset, nom: String, modifier: Modifier) {
+    Row(
+        modifier = modifier
+            .height(52.dp)
+            .background(Couleurs.Accent900, Formes.Grande)
+            .border(2.dp, Couleurs.Accent, Formes.Grande)
+            .padding(horizontal = 10.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "Exercice $role : $nom, verrouillé" },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BadgeLettre(role)
+        Text(nom, style = Typo.Onglet, color = Couleurs.Accent100, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun OngletInactif(role: RoleSuperset, nom: String, onClick: () -> Unit, modifier: Modifier) {
+    Row(
+        modifier = modifier
+            .height(52.dp)
+            .clip(Formes.Grande)
+            .contourPointille(Couleurs.Neutre700)
+            .clickable(role = Role.Tab, onClickLabel = "Passer à l’exercice $role", onClick = onClick)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BadgeLettre(role, fond = Couleurs.Neutre800, texte = Couleurs.Neutre300)
+        Text(nom.ifEmpty { nomParDefaut(role) }, style = Typo.Onglet, color = Couleurs.Neutre400, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -592,6 +813,49 @@ private fun DialogueFinSimple(actions: ActionsSaisie) {
     }
 }
 
+/**
+ * S5 : superset dont un seul onglet est saisi. « Enregistrer A seul et terminer » (principal), « Terminer sans
+ * enregistrer cette série » (contour), « Annuler » : mêmes styles que 4a.
+ */
+@Composable
+private fun DialogueFinSupersetIncomplet(dialogue: DialogueFin.SupersetIncomplet, actions: ActionsSaisie) {
+    val saisi = dialogue.role
+    DialogueNocturne(titre = "Terminer l’entraînement ?", onFermer = actions::annulerFin) {
+        Text(
+            text = buildAnnotatedString {
+                append("La série de superset en cours est incomplète : ")
+                withStyle(SpanStyle(color = Couleurs.Texte)) { append("$saisi (${dialogue.description})") }
+                append(" est saisi, ")
+                withStyle(SpanStyle(color = Couleurs.Texte)) { append(saisi.autre.name) }
+                append(" ne l’est pas.")
+            },
+            style = Typo.CorpsDialogue,
+            color = Couleurs.Neutre300,
+        )
+        Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            BoutonPrincipal(
+                texte = "Enregistrer $saisi seul et terminer",
+                onClick = { actions.terminer(avecSerie = true) },
+                modifier = Modifier.fillMaxWidth(),
+                hauteur = 52.dp,
+                forme = Formes.Moyenne,
+                style = Typo.Action,
+                margeHorizontale = 6.dp,
+            )
+            BoutonContour(
+                texte = "Terminer sans enregistrer cette série",
+                onClick = { actions.terminer(avecSerie = false) },
+                modifier = Modifier.fillMaxWidth(),
+                forme = Formes.Moyenne,
+                style = Typo.Action,
+                couleurTexte = Couleurs.Texte,
+                margeHorizontale = 6.dp,
+            )
+            BoutonTexte("Annuler", onClick = actions::annulerFin, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
 // --- Historique de l'exercice ---
 
 /**
@@ -655,6 +919,7 @@ private fun SectionSeance(seance: SeanceHistorique) {
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(seance.entete, style = Typo.EnteteSeance, color = Couleurs.Neutre400)
+        seance.superset?.let { EtiquetteSuperset("En superset avec $it") }
         seance.series.forEach { PaliersEmpiles(it.principal, it.degressifs, Typo.TitreDetail, retrait = 2.dp) }
     }
 }
