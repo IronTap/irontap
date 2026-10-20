@@ -1,0 +1,38 @@
+# Brouillon de la fiche de compilation pour fdroiddata (metadata/fr.irontap.yml), cf. PUBLIER.md.
+# À COMPLÉTER : remplacer COMPTE_GITHUB, commit et AllowedAPKSigningKeys avant l'envoi.
+# Les textes et images de la fiche sont lus dans fastlane/metadata/android/ du dépôt.
+
+Categories:
+  - Workout
+  - Sports & Health
+License: GPL-3.0-or-later
+AuthorName: IronTap Dev
+AuthorEmail: contact@irontap.fr
+WebSite: https://irontap.fr/
+SourceCode: https://github.com/COMPTE_GITHUB/irontap
+IssueTracker: https://github.com/COMPTE_GITHUB/irontap/issues
+Changelog: https://github.com/COMPTE_GITHUB/irontap/releases
+
+AutoName: IronTap
+
+RepoType: git
+Repo: https://github.com/COMPTE_GITHUB/irontap.git
+# Build reproductible : F-Droid compare sa compilation à l'APK signé publié sur GitHub.
+Binaries: https://github.com/COMPTE_GITHUB/irontap/releases/download/v%v/irontap-%v.apk
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    # Empreinte complète (40 caractères) du commit du tag v0.1.0 : git rev-parse v0.1.0^{commit}
+    commit: À COMPLÉTER
+    subdir: app
+    gradle:
+      - yes
+
+# Empreinte SHA-256 du certificat de signature, en minuscules et sans deux-points.
+AllowedAPKSigningKeys: À COMPLÉTER
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

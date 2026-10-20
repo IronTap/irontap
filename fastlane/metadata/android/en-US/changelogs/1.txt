@@ -1,0 +1,1 @@
+First release: set logging with rest timer, quick add for weight and reps, exercise autocompletion, exercise history, drop sets, supersets, editing and deleting sets and workouts, plain text or CSV export.

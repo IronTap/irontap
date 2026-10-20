@@ -1,0 +1,25 @@
+<p>IronTap est un carnet de musculation pour noter tes séances en quelques appuis, d’une main, entre deux séries : exercice, poids, répétitions, et un chronomètre de repos qui démarre tout seul. Rien à configurer : tu ouvres, tu notes.</p>
+
+<p><b>Fonctionnalités</b></p>
+<ul>
+<li>Chronomètre de repos qui repart après chaque série et reste visible dans une notification</li>
+<li>Ajout rapide : +1, +5, +10, +20 sur le poids et les répétitions, décimales acceptées (1,25 kg)</li>
+<li>Autocomplétion des exercices, avec ou sans accents</li>
+<li>Historique de l’exercice en un appui, sans quitter la saisie</li>
+<li>Séries dégressives : autant de paliers que tu veux dans une même série</li>
+<li>Supersets : deux exercices enchaînés, un onglet chacun</li>
+<li>Modification et suppression des séries et des entraînements</li>
+<li>Export en texte ou en CSV, à partager ou à enregistrer</li>
+</ul>
+
+<p><b>Respect de la vie privée</b></p>
+<ul>
+<li>Aucune permission Internet : l’appli ne peut rien envoyer ni recevoir</li>
+<li>Aucun compte, aucune publicité, aucun traceur</li>
+<li>Tes séances restent sur ton téléphone : la sauvegarde dans le cloud est désactivée</li>
+<li>Une seule autorisation, facultative : les notifications, pour le chrono</li>
+</ul>
+
+<p><b>Volontairement absent :</b> programme imposé, coach virtuel, graphiques, synchronisation, réseau social.</p>
+
+<p>L’appli est en français. Elle fonctionne à partir d’Android 8.</p>

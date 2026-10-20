@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -7,16 +9,34 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+// Signature des versions publiées : keystore.properties à la racine, hors dépôt (cf. PUBLIER.md).
+// Sans ce fichier, l'APK release n'est pas signé, comme sur le serveur de compilation d'F-Droid.
+val signature = rootProject.file("keystore.properties").takeIf { it.isFile }?.let { fichier ->
+    Properties().apply { fichier.inputStream().use { load(it) } }
+}
+
 android {
     namespace = "app.irontap"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "app.irontap"
+        // Tiré du domaine irontap.fr ; le namespace (paquets Kotlin) reste app.irontap.
+        applicationId = "fr.irontap"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+    }
+
+    signingConfigs {
+        if (signature != null) {
+            create("release") {
+                storeFile = rootProject.file(signature.getProperty("storeFile"))
+                storePassword = signature.getProperty("storePassword")
+                keyAlias = signature.getProperty("keyAlias")
+                keyPassword = signature.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -26,6 +46,7 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -33,6 +54,13 @@ android {
                 "proguard-rules.pro",
             )
         }
+    }
+
+    // F-Droid refuse ce bloc (liste des dépendances chiffrée pour Google, ajoutée à la signature) :
+    // sans lui, l'APK publié peut aussi être recompilé à l'identique (builds reproductibles).
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     compileOptions {

@@ -28,13 +28,13 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 
 ## Identité et compatibilité
 
-- `applicationId` : **`app.irontap`** (définitif : ne peut plus changer après publication sur le Play Store).
+- `applicationId` : **`fr.irontap`**, tiré du domaine `irontap.fr` (recommandation d'F-Droid). Définitif après la première diffusion : en changer créerait une autre appli, et l'historique serait perdu faute d'import. Le `namespace` (paquets Kotlin) reste `app.irontap`.
 - `minSdk 26` (Android 8), `targetSdk 36`.
 - Pas de permission `INTERNET` : garantit qu'aucun appel réseau n'est possible.
 - Seule permission demandée : `POST_NOTIFICATIONS` (Android 13+, précédée de l'écran 9).
 - R8 (`isMinifyEnabled`) activé en release.
 - Sauvegarde : aucune sauvegarde dans le cloud (`allowBackup="false"` et `dataExtractionRules`). Le transfert direct vers un nouveau téléphone (Android 12+) reste permis pour garder l'historique.
-- Version de développement : paquet distinct `app.irontap.debug` (« IronTap debug »), qui coexiste avec la version signée sans partager ses données.
+- Version de développement : paquet distinct `fr.irontap.debug` (« IronTap debug »), qui coexiste avec la version signée sans partager ses données.
 - Dépôts Gradle : `androidx.*` et `com.android.*` viennent exclusivement du dépôt Google, le reste de Maven Central.
 - Aucune bibliothèque de publicité, d'analytique ou de traçage.
 

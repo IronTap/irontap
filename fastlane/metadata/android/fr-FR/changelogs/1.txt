@@ -1,0 +1,1 @@
+Première version : saisie des séries avec chronomètre de repos, ajout rapide du poids et des répétitions, autocomplétion des exercices, historique de l’exercice, séries dégressives, supersets, modification et suppression des séries et des entraînements, export en texte ou en CSV.

@@ -1,0 +1,27 @@
+<p>IronTap is a gym workout log for recording your sessions in a few taps, one-handed, between sets: exercise, weight, reps, and a rest timer that starts on its own. Nothing to set up: open it and log.</p>
+
+<p><b>The app is in French only.</b></p>
+
+<p><b>Features</b></p>
+<ul>
+<li>Rest timer that restarts after each set and stays visible in a notification</li>
+<li>Quick add: +1, +5, +10, +20 on weight and reps, decimals accepted (1.25 kg)</li>
+<li>Exercise name autocompletion, accent-insensitive</li>
+<li>Exercise history in one tap, without leaving the entry screen</li>
+<li>Drop sets: as many steps as you want within a single set</li>
+<li>Supersets: two exercises back to back, one tab each</li>
+<li>Edit and delete sets and workouts</li>
+<li>Export as plain text or CSV, to share or save as a file</li>
+</ul>
+
+<p><b>Privacy</b></p>
+<ul>
+<li>No Internet permission: the app cannot send or receive anything</li>
+<li>No account, no ads, no trackers</li>
+<li>Your workouts stay on your phone: cloud backup is disabled</li>
+<li>A single, optional permission: notifications, for the rest timer</li>
+</ul>
+
+<p><b>Deliberately left out:</b> imposed programs, virtual coach, charts, sync, social features.</p>
+
+<p>Requires Android 8 or later.</p>
