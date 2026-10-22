@@ -15,3 +15,7 @@ captures/
 keystore.properties
 signing.properties
 app/release/
+
+# Spécifications et maquettes : dépôt séparé ../irontap-specs
+design_handoff_*/
+handoff_*/

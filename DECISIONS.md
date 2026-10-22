@@ -1,6 +1,6 @@
 # IronTap — Décisions techniques
 
-Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design restent dans `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives), puis `handoff_superset/` (spec v1.7, supersets).
+Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design sont dans un dépôt séparé, `irontap-specs` (à côté de ce dépôt) : `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives), puis `handoff_superset/` (spec v1.7, supersets).
 
 ## Principes
 

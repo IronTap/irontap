@@ -20,7 +20,7 @@ Site : https://irontap.fr/
 - Pas de sauvegarde dans le cloud ; le transfert direct vers un nouveau téléphone reste possible (Android 12 et plus).
 
 ## Installation
-- **Versions publiées** : APK signé dans les [versions GitHub](https://github.com/COMPTE_GITHUB/irontap/releases) <!-- À COMPLÉTER : nom du compte GitHub -->. Pour être prévenu des mises à jour, [Obtainium](https://github.com/ImranR98/Obtainium) peut suivre ce dépôt.
+- **Versions publiées** : APK signé dans les [versions GitHub](https://github.com/IronTap/irontap/releases). Pour être prévenu des mises à jour, [Obtainium](https://github.com/ImranR98/Obtainium) peut suivre ce dépôt.
 - **F-Droid** : demande d'inclusion prévue.
 
 Android 8 ou plus récent. L'application est en français.

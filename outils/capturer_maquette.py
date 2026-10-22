@@ -2,7 +2,7 @@
 
 Usage :
   LD_LIBRARY_PATH=~/opt/libs-navigateur/racine/usr/lib/x86_64-linux-gnu \
-  ~/opt/venv-outils/bin/python outils/capturer_maquette.py design_handoff_irontap/design SaisieSerie.dc.html sortie.png 360 800
+  ~/opt/venv-outils/bin/python outils/capturer_maquette.py ../irontap-specs/design_handoff_irontap/design SaisieSerie.dc.html sortie.png 360 800
 
 Prérequis (hors dépôt, sans sudo) : venv ~/opt/venv-outils avec `playwright` + `playwright install chromium-headless-shell`,
 et libnss3 / libnspr4 / libasound2t64 extraites des .deb Ubuntu dans ~/opt/libs-navigateur/racine.
