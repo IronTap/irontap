@@ -1,5 +1,5 @@
 # Brouillon de la fiche de compilation pour fdroiddata (metadata/fr.irontap.yml), cf. PUBLIER.md.
-# À COMPLÉTER : commit et AllowedAPKSigningKeys avant l'envoi.
+# À COMPLÉTER : commit avant l'envoi.
 # Les textes et images de la fiche sont lus dans fastlane/metadata/android/ du dépôt.
 
 Categories:
@@ -30,7 +30,7 @@ Builds:
       - yes
 
 # Empreinte SHA-256 du certificat de signature, en minuscules et sans deux-points.
-AllowedAPKSigningKeys: À COMPLÉTER
+AllowedAPKSigningKeys: d0d139abc42eb051da809cfadf5c6a7490715df6bffcaa693969b54d380d5a41
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags

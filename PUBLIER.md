@@ -3,10 +3,14 @@
 Une seule clé signe tous les APK publiés (versions GitHub et F-Droid). F-Droid recompile chaque version depuis son tag, vérifie que le résultat est identique à l'APK publié sur GitHub (build reproductible), puis distribue cet APK signé. Changer de clé obligerait les utilisateurs à désinstaller, et IronTap n'a pas d'import : leur historique serait perdu.
 
 ## Une fois : la clé de signature
+Créée le 2026-10-23 dans `~/cles-android/irontap.jks` (hors dépôt), avec :
 ```sh
-keytool -genkeypair -v -keystore irontap.jks -alias irontap -keyalg RSA -keysize 4096 -validity 10000
+keytool -genkeypair -v -keystore ~/cles-android/irontap.jks -storetype PKCS12 \
+  -alias irontap -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=IronTap Dev, O=IronTap"
 ```
-- Garder `irontap.jks` et ses mots de passe **hors du dépôt**, en deux copies (par exemple un gestionnaire de mots de passe et une clé USB). Sans eux, plus aucune mise à jour possible.
+- **Le titulaire du certificat (`-dname`) est public** : il figure dans chaque APK signé (F-Droid l'affiche). Jamais de nom réel ni de ville.
+- En PKCS12, un seul mot de passe protège le fichier et la clé (`storePassword` = `keyPassword`).
+- Garder `irontap.jks` et son mot de passe **hors du dépôt**, en deux copies (par exemple un gestionnaire de mots de passe et une clé USB). Sans eux, plus aucune mise à jour possible.
 - À la racine du dépôt, créer `keystore.properties` (ignoré par git, comme `*.jks`) :
   ```properties
   storeFile=/chemin/vers/irontap.jks
@@ -14,7 +18,7 @@ keytool -genkeypair -v -keystore irontap.jks -alias irontap -keyalg RSA -keysize
   keyAlias=irontap
   keyPassword=…
   ```
-- Empreinte du certificat, demandée par F-Droid (`AllowedAPKSigningKeys`) : la ligne `SHA256` de `keytool -list -v -keystore irontap.jks -alias irontap`, en minuscules et sans les deux-points.
+- Empreinte SHA-256 du certificat, déjà reportée dans `outils/fdroid/fr.irontap.yml` (`AllowedAPKSigningKeys`) : `d0d139abc42eb051da809cfadf5c6a7490715df6bffcaa693969b54d380d5a41`. Pour vérifier un APK : `~/Android/Sdk/build-tools/36.0.0/apksigner verify --print-certs <apk>` (titulaire `CN=IronTap Dev, O=IronTap`, même empreinte).
 
 ## À chaque version
 1. Dans `app/build.gradle.kts`, augmenter `versionCode` (entier, +1) et `versionName` (`0.1.0`, `0.2.0`…).
