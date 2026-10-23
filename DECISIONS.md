@@ -1,6 +1,6 @@
 # IronTap — Décisions techniques
 
-Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design sont dans un dépôt séparé, `irontap-specs` (à côté de ce dépôt) : `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives), puis `handoff_superset/` (spec v1.7, supersets).
+Décisions prises avant le démarrage du développement (13 oct. 2026). La spécification fonctionnelle et le design sont dans un dépôt séparé, `irontap-specs` (à côté de ce dépôt) : `design_handoff_irontap/` (`spec-app-muscu.md` fait foi pour le comportement, `README.md` pour le rendu visuel). Les évolutions suivantes arrivent en handoffs incrémentaux, dont la spec remplace la précédente : `handoff_historique_exercice/` (spec v1.3, §4.3.8), puis `handoff_degressive/` (spec v1.5, séries dégressives), puis `handoff_superset/` (spec v1.7, supersets), puis `handoff_a_propos/` (spec v1.8, écran À propos).
 
 ## Principes
 
@@ -21,7 +21,7 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 | Injection de dépendances | Aucune bibliothèque : conteneur manuel dans `Application` |
 | Dates | `java.time`, locale `fr` (« Lun. 12 oct. 2026 ») |
 | Police | Inter, fichiers TTF embarqués dans `res/font` (pas de polices téléchargeables, elles passent par le réseau) |
-| Icônes | Phosphor, exportées en vector drawables (24 icônes, aucune dépendance ; flèche des dégressives et lien des supersets en deux épaisseurs comme les maquettes ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
+| Icônes | Phosphor, exportées en vector drawables (29 icônes, aucune dépendance ; flèche des dégressives et lien des supersets en deux épaisseurs comme les maquettes ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
 | Export | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` ; texte et CSV générés à la main |
 | Build | Gradle Kotlin DSL + version catalog |
 | Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, autocomplétion sans accents) + Room en mémoire |
@@ -102,6 +102,13 @@ Spec §6, avec ces précisions :
   - Indications d'« Ajouter un tour » : la dernière série de chaque exercice (maquette T1 : B reprend le tour 3 quand le tour 4 n'a pas de B).
   - Renommer : appui sur le nom de A ou de B dans l'en-tête de la carte (pas de crayon sur la maquette).
   - « Supprimer le tour N ? » : choix destructifs empilés, rappel des séries de A et B.
+- **À propos** (10a, 10b, spec §4.6) :
+  - Textes de licence embarqués dans `assets/licences/`, préparés à chaque compilation par la tâche `preparerLicences<Variante>` (`app/build.gradle.kts`) : `LICENSE`, `licences/Inter-OFL.txt`, `licences/Phosphor-MIT.txt`, `licences/Apache-2.0.txt` (texte officiel), `licences/Protobuf-BSD-3-Clause.txt`, et `bibliotheques.txt`, la liste des bibliothèques réellement résolues pour la variante (BOM exclues), avec leur licence et leur titulaire. Pas de plugin `aboutlibraries` / `oss-licenses` : la tâche suffit et reste hors ligne. Liste triée : builds reproductibles.
+  - Toutes les bibliothèques sont sous Apache 2.0, sauf `androidx.datastore:datastore-preferences-external-protobuf`, copie de protobuf embarquée par DataStore : BSD 3 clauses, « Copyright 2008 Google Inc. », dont la licence impose de reproduire la mention et le texte (écran « Bibliothèques Android », après Apache 2.0). Garde-fous : une bibliothèque d'un groupe inconnu arrête la compilation ; le test `AProposTest` compare chaque licence listée à celle que déclare le POM du module (cache Gradle, parents compris).
+  - Texte d'Inter : celui du dépôt (`licences/`), qui accompagne la version de la police embarquée, même s'il cite encore l'ancienne adresse de l'OFL.
+  - Icône de l'appli dessinée comme la maquette (haltère accent-300 sur accent-900 bordé d'accent) : l'icône du lanceur, sur fond `bg`, disparaîtrait sur le fond de l'écran.
+  - Découpage des textes pour l'affichage : paragraphes réunis ; titres de section : ligne courte en majuscules (« PREAMBLE »), ligne centrée (« Preamble » de la GPL) ou intitulé numéroté seul (« 0. Definitions. ») ; ligne de copyright en tête (« (c) » écrit « © »).
+  - « Code source » : `ACTION_VIEW` vers `github.com/IronTap/irontap` ; sans navigateur, toast système « Aucune application pour ouvrir ce lien ».
 - Feuilles du bas sans ombre lg : avec la feuille Material, l'ombre serait dessinée en haut de l'écran ; le voile suffit.
 
 ## Export
@@ -132,7 +139,6 @@ Spec §6, avec ces précisions :
 - Compte développeur personnel récent : test fermé obligatoire avec 12 testeurs pendant 14 jours avant la mise en production.
 - Vérifier le `targetSdk` exigé par Google au moment de la publication.
 - Activer la vérification des dépendances (`./gradlew --write-verification-metadata sha256 …`, fichier `gradle/verification-metadata.xml` versionné).
-- Embarquer les mentions de licence tierces dans l'application (Inter OFL, Phosphor MIT : `licences/*.txt`), par exemple sur une ligne « Licences ».
 
 ## Prochaines étapes
 

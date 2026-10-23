@@ -80,6 +80,9 @@ interface ActionsAccueil {
     fun nouvelEntrainement()
     fun reprendre()
     fun ouvrir(entrainement: Entrainement)
+
+    /** ⓘ de l'en-tête : écran À propos (spec §4.6). */
+    fun aPropos()
 }
 
 /** Hauteur du dégradé qui sépare la liste du bouton ancré en bas. */
@@ -138,7 +141,7 @@ fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, onExporter: () 
             .background(Couleurs.Fond)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
     ) {
-        EnTete(exportActif = etat.historique.isNotEmpty(), onExporter = onExporter)
+        EnTete(exportActif = etat.historique.isNotEmpty(), onAPropos = actions::aPropos, onExporter = onExporter)
         Box(Modifier.weight(1f)) {
             // Place réservée sous le contenu pour le bouton ancré en bas (et son dégradé).
             val basBouton = HauteurDegrade + (if (etat.enCours != null) 56.dp else 64.dp) +
@@ -157,9 +160,9 @@ fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, onExporter: () 
     }
 }
 
-/** En-tête 64 dp : titre à gauche, Exporter (rond 48) à droite, à 35 % sans historique. */
+/** En-tête 64 dp : titre à gauche, ⓘ (À propos) puis Exporter (ronds 48) à droite, Exporter à 35 % sans historique. */
 @Composable
-private fun EnTete(exportActif: Boolean, onExporter: () -> Unit) {
+private fun EnTete(exportActif: Boolean, onAPropos: () -> Unit, onExporter: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -168,6 +171,14 @@ private fun EnTete(exportActif: Boolean, onExporter: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Entraînements", style = Typo.TitreAccueil, color = Couleurs.Texte, modifier = Modifier.weight(1f))
+        BoutonRond(
+            onClick = onAPropos,
+            taille = 48.dp,
+            fond = Color.Transparent,
+            fondAppuye = Couleurs.Neutre800,
+            bordure = Color.Transparent,
+            description = "À propos",
+        ) { Icone(R.drawable.ic_info, couleur = Couleurs.Neutre300) }
         BoutonRond(
             onClick = onExporter,
             taille = 48.dp,

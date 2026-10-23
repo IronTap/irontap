@@ -46,6 +46,9 @@ IronTap est un logiciel libre, distribué sous la licence GNU GPL version 3 ou t
 
 Composants tiers, avec leur propre licence (textes dans [`licences/`](licences/)) :
 - police [Inter](https://rsms.me/inter/), SIL Open Font License 1.1 ;
-- icônes [Phosphor](https://phosphoricons.com/), licence MIT.
+- icônes [Phosphor](https://phosphoricons.com/), licence MIT ;
+- bibliothèques Android (Kotlin, AndroidX : Compose, Room…), licence Apache 2.0, sauf la copie de protobuf embarquée par DataStore (BSD 3 clauses, Google Inc.).
+
+Ces textes, et la liste des bibliothèques réellement embarquées, sont lisibles dans l'application : ⓘ de l'accueil, « À propos ».
 
 Le nom « IronTap » et son logo ne sont pas couverts par la licence : une version modifiée et redistribuée doit porter un autre nom et un autre logo.

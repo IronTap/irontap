@@ -38,6 +38,12 @@ ICONS = {
     # Superset : trait 20 à 14 dp (pastille, feuille), 24 aux petites tailles (11–12 dp), comme les maquettes.
     'link_simple': ('<path d="M141.5 165.4l-21.9 21.9a44 44 0 0 1-62.2-62.2l21.9-21.9"/><path d="M114.5 90.6l21.9-21.9a44 44 0 0 1 62.2 62.2l-21.9 21.9"/><line x1="100" y1="156" x2="156" y2="100"/>', 20),
     'link_simple_small': ('<path d="M141.5 165.4l-21.9 21.9a44 44 0 0 1-62.2-62.2l21.9-21.9"/><path d="M114.5 90.6l21.9-21.9a44 44 0 0 1 62.2 62.2l-21.9 21.9"/><line x1="100" y1="156" x2="156" y2="100"/>', 24),
+    # À propos (10a) : info de l'accueil, lignes de la carte, et logo de l'appli (haltère simplifiée de la maquette).
+    'info': ('<circle cx="128" cy="128" r="96"/><line x1="128" y1="120" x2="128" y2="176"/><line x1="128" y1="84" x2="128" y2="86"/>', 16),
+    'code': ('<polyline points="64 88 16 128 64 168"/><polyline points="192 88 240 128 192 168"/><line x1="160" y1="40" x2="96" y2="216"/>', 16),
+    'file_text': ('<path d="M200 224H56a8 8 0 0 1-8-8V40a8 8 0 0 1 8-8h96l56 56v128a8 8 0 0 1-8 8Z"/><polyline points="152 32 152 88 208 88"/><line x1="96" y1="136" x2="160" y2="136"/><line x1="96" y1="168" x2="160" y2="168"/>', 16),
+    'arrow_square_out': ('<polyline points="216 100 216 40 156 40"/><line x1="144" y1="112" x2="216" y2="40"/><path d="M184 144v64a8 8 0 0 1-8 8H48a8 8 0 0 1-8-8V80a8 8 0 0 1 8-8h64"/>', 18),
+    'barbell_logo': ('<rect x="56" y="56" width="40" height="144" rx="8"/><rect x="160" y="56" width="40" height="144" rx="8"/><line x1="96" y1="128" x2="160" y2="128"/><path d="M200 80h24v96h-24"/><path d="M56 176H32V80h24"/>', 18),
     'lock': ('<rect x="40" y="88" width="176" height="128" rx="8"/><path d="M92 88V52a36 36 0 0 1 72 0v36"/>', 16),
     'flag': ('<line x1="48" y1="224" x2="48" y2="48"/><path d="M48 168c64-56 96 56 160 0V48c-64 56-96-56-160 0"/>', 16),
     'calendar': ('<rect x="40" y="40" width="176" height="176" rx="8"/><line x1="176" y1="24" x2="176" y2="56"/><line x1="80" y1="24" x2="80" y2="56"/><line x1="40" y1="88" x2="216" y2="88"/>', 16),

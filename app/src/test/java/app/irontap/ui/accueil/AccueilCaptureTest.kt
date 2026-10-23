@@ -1,6 +1,9 @@
 package app.irontap.ui.accueil
 
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onRoot
 import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EtatChrono
@@ -58,6 +61,7 @@ class AccueilCaptureTest {
         override fun nouvelEntrainement() = Unit
         override fun reprendre() = Unit
         override fun ouvrir(entrainement: Entrainement) = Unit
+        override fun aPropos() = Unit
     }
 
     private fun afficher(etat: EtatAccueil.Pret) = compose.setContent {
@@ -67,18 +71,21 @@ class AccueilCaptureTest {
     @Test
     fun avecHistorique() {
         afficher(EtatAccueil.Pret(historique, enCours = null))
+        compose.onNode(hasContentDescription("À propos") and hasClickAction()).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
     }
 
     @Test
     fun vide() {
         afficher(EtatAccueil.Pret(emptyList(), enCours = null))
+        compose.onNode(hasContentDescription("À propos") and hasClickAction()).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
     }
 
     @Test
     fun enCours() {
         afficher(EtatAccueil.Pret(historique, enCours))
+        compose.onNode(hasContentDescription("À propos") and hasClickAction()).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
     }
 

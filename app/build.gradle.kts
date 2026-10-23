@@ -1,3 +1,6 @@
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.artifacts.result.ResolvedComponentResult
+import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import java.util.Properties
 
 plugins {
@@ -75,6 +78,8 @@ android {
 
     buildFeatures {
         compose = true
+        // Version affichée par l'écran À propos (spec §4.6).
+        buildConfig = true
     }
 
     testOptions {
@@ -99,6 +104,111 @@ android {
 
 room {
     schemaDirectory("$projectDir/schemas")
+}
+
+/**
+ * Textes de licence embarqués dans `assets/licences/` (écran À propos, spec §4.6), lus hors ligne : licence d'IronTap,
+ * Inter (OFL), Phosphor (MIT), Apache 2.0, BSD 3 clauses (protobuf), et la liste des bibliothèques réellement
+ * embarquées dans la variante avec leur licence et leur titulaire. Une bibliothèque d'un groupe inconnu arrête la
+ * compilation : vérifier sa licence puis compléter [TITULAIRES] (Apache 2.0) ou [PARTICULIERES]. Le test
+ * `AProposTest` compare ces licences à celles déclarées par les POM. Sortie triée : builds reproductibles.
+ */
+abstract class PreparerLicences : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licenceIronTap: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licenceInter: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licencePhosphor: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licenceApache: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val licenceProtobuf: RegularFileProperty
+
+    /** Graphe des dépendances d'exécution de la variante. */
+    @get:Input
+    abstract val dependances: Property<ResolvedComponentResult>
+
+    @get:OutputDirectory
+    abstract val sortie: DirectoryProperty
+
+    @TaskAction
+    fun preparer() {
+        val dossier = sortie.get().dir("licences").asFile
+        dossier.deleteRecursively()
+        dossier.mkdirs()
+        licenceIronTap.get().asFile.copyTo(File(dossier, "irontap-LICENSE.txt"))
+        licenceInter.get().asFile.copyTo(File(dossier, "inter-OFL.txt"))
+        licencePhosphor.get().asFile.copyTo(File(dossier, "phosphor-MIT.txt"))
+        licenceApache.get().asFile.copyTo(File(dossier, "apache-2.0.txt"))
+        licenceProtobuf.get().asFile.copyTo(File(dossier, "protobuf-BSD-3-Clause.txt"))
+
+        val composants = LinkedHashSet<ResolvedComponentResult>()
+        fun parcourir(composant: ResolvedComponentResult) {
+            if (!composants.add(composant)) return
+            composant.dependencies.filterIsInstance<ResolvedDependencyResult>().forEach { parcourir(it.selected) }
+        }
+        parcourir(dependances.get())
+        val lignes = composants
+            // Les BOM (plateformes) ne sont pas embarquées : elles ne fixent que des versions.
+            .filterNot { composant -> composant.variants.isNotEmpty() && composant.variants.all { categorie(it.attributes) == "platform" } }
+            .mapNotNull { it.id as? ModuleComponentIdentifier }
+            .map { id ->
+                val (licence, titulaire) = PARTICULIERES["${id.group}:${id.module}"]
+                    ?: TITULAIRES.entries.firstOrNull { (groupe, _) -> id.group == groupe || id.group.startsWith("$groupe.") }?.let { "Apache-2.0" to it.value }
+                    ?: throw GradleException(
+                        "Bibliothèque sans titulaire connu : ${id.displayName}. Vérifier sa licence et compléter TITULAIRES ou PARTICULIERES (app/build.gradle.kts).",
+                    )
+                "$licence\t$titulaire\t${id.group}:${id.module}\t${id.version}"
+            }
+            .sorted()
+        File(dossier, "bibliotheques.txt").writeText(lignes.joinToString("\n", postfix = "\n"))
+    }
+
+    private fun categorie(attributs: AttributeContainer): String? =
+        attributs.keySet().firstOrNull { it.name == "org.gradle.category" }?.let { attributs.getAttribute(it)?.toString() }
+
+    companion object {
+        /** Bibliothèques hors Apache 2.0, par module → (licence SPDX, titulaire) : prioritaires sur [TITULAIRES]. */
+        val PARTICULIERES = mapOf(
+            // Copie de protobuf-javalite embarquée par DataStore Preferences.
+            "androidx.datastore:datastore-preferences-external-protobuf" to ("BSD-3-Clause" to "Google Inc."),
+        )
+
+        /** Groupe Maven (et ses sous-groupes) → titulaire du copyright, pour les bibliothèques sous Apache 2.0. */
+        val TITULAIRES = linkedMapOf(
+            "androidx" to "The Android Open Source Project",
+            "org.jetbrains.kotlin" to "JetBrains s.r.o. and Kotlin Programming Language contributors",
+            "org.jetbrains.kotlinx" to "JetBrains s.r.o. and contributors",
+            "org.jetbrains" to "JetBrains s.r.o.",
+            "com.squareup.okio" to "Square, Inc.",
+            "com.google.guava" to "The Guava Authors",
+            "org.jspecify" to "The JSpecify Authors",
+        )
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val tache = tasks.register<PreparerLicences>("preparerLicences${variant.name.replaceFirstChar { it.uppercase() }}") {
+            licenceIronTap.set(rootProject.layout.projectDirectory.file("LICENSE"))
+            licenceInter.set(rootProject.layout.projectDirectory.file("licences/Inter-OFL.txt"))
+            licencePhosphor.set(rootProject.layout.projectDirectory.file("licences/Phosphor-MIT.txt"))
+            licenceApache.set(rootProject.layout.projectDirectory.file("licences/Apache-2.0.txt"))
+            licenceProtobuf.set(rootProject.layout.projectDirectory.file("licences/Protobuf-BSD-3-Clause.txt"))
+            dependances.set(variant.runtimeConfiguration.incoming.resolutionResult.rootComponent)
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(tache, PreparerLicences::sortie)
+    }
 }
 
 dependencies {

@@ -11,6 +11,9 @@ import androidx.navigation.toRoute
 import app.irontap.donnees.Entrainement
 import app.irontap.ui.accueil.ActionsAccueil
 import app.irontap.ui.accueil.EcranAccueil
+import app.irontap.ui.apropos.ComposantLicence
+import app.irontap.ui.apropos.EcranAPropos
+import app.irontap.ui.apropos.EcranLicence
 import app.irontap.ui.detail.DetailViewModel
 import app.irontap.ui.detail.EcranDetail
 import app.irontap.ui.detail.NavigationDetail
@@ -36,6 +39,13 @@ data object Saisie
 @Serializable
 data class Detail(val id: Long)
 
+@Serializable
+data object APropos
+
+/** [composant] : nom d'un [ComposantLicence]. */
+@Serializable
+data class Licence(val composant: String)
+
 /** [demandesSaisie] : compteur d'appuis sur la notification du chrono, qui ramènent à l'écran de saisie. */
 @Composable
 fun IronTapApp(demandesSaisie: Int = 0) {
@@ -51,8 +61,20 @@ fun IronTapApp(demandesSaisie: Int = 0) {
                         override fun ouvrir(entrainement: Entrainement) = navController.navigate(Detail(entrainement.id)) {
                             launchSingleTop = true
                         }
+
+                        override fun aPropos() = navController.navigate(APropos) { launchSingleTop = true }
                     },
                 )
+            }
+            composable<APropos> {
+                EcranAPropos(
+                    onRetour = { navController.popBackStack<APropos>(inclusive = true) },
+                    onLicence = { navController.navigate(Licence(it.name)) { launchSingleTop = true } },
+                )
+            }
+            composable<Licence> { entree ->
+                val route = entree.toRoute<Licence>()
+                EcranLicence(ComposantLicence.valueOf(route.composant), onRetour = { navController.popBackStack<Licence>(inclusive = true) })
             }
             composable<NouvelEntrainement> {
                 EcranFormulaireEntrainement(

@@ -57,6 +57,7 @@ class ExportCaptureTest {
         override fun partager() = Unit
         override fun enregistrer() = Unit
         override fun fermer() = Unit
+        override fun aPropos() = Unit
         override fun nouvelEntrainement() = Unit
         override fun reprendre() = Unit
         override fun ouvrir(entrainement: Entrainement) = Unit

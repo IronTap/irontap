@@ -153,6 +153,12 @@ object Typo {
     /** Lettre A / B de l'en-tête de la carte superset du détail (H) : 10 / 600. */
     val BadgeOngletPetit = style(10, FontWeight.SemiBold).interligneNaturel()
 
+    /** Titre d'une ligne de l'écran À propos (10a) : 16 / 400. */
+    val LigneAPropos = style(16, FontWeight.Normal)
+
+    /** Texte d'une licence (10b) : 13 / 400, interligne 1,6. */
+    val TexteLicence = style(13, FontWeight.Normal).copy(lineHeight = 1.6.em)
+
     /** Noms A et B de l'en-tête de la carte superset du détail (H) : 15 / 500. */
     val TitreCarte = style(15)
 
