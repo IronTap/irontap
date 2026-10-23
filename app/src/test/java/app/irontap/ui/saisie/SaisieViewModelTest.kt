@@ -446,8 +446,20 @@ class SaisieViewModelTest {
 
     // --- Supersets (spec §4.3.10) ---
 
-    private suspend fun SaisieViewModel.enSuperset() =
-        etat.attendre { (it as? EtatSaisie.EnCours)?.superset != null } as EtatSaisie.EnCours
+    /**
+     * Écritures déjà lancées terminées : tant qu'elles s'écrivent, « Nouvelle série », « Dégressive » et les bascules
+     * sont ignorées comme un double appui. Leur effet paraît dans l'état avant la fin (la mémorisation du superset
+     * suit) : attendre l'état seul rendait les tests instables.
+     */
+    private suspend fun SaisieViewModel.ecrituresTerminees() =
+        withContext(Dispatchers.Default) { withTimeout(5_000) { attendreEcritures() } }
+
+    /** Superset commencé, mémorisation comprise. */
+    private suspend fun SaisieViewModel.enSuperset(): EtatSaisie.EnCours {
+        val enCours = etat.attendre { (it as? EtatSaisie.EnCours)?.superset != null } as EtatSaisie.EnCours
+        ecrituresTerminees()
+        return enCours
+    }
 
     private fun SaisieViewModel.saisirOnglet(role: RoleSuperset, nom: String? = null, poids: String? = null, repetitions: String? = null) {
         val champs = champs(role)
@@ -614,6 +626,8 @@ class SaisieViewModelTest {
         vm.saisirOnglet(RoleSuperset.B, "Curl", "14", "10")
         vm.degressive()
         val etat = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.paliersEnCours?.size == 1 } as EtatSaisie.EnCours
+        // Le palier paraît avant que le superset soit mémorisé : « Nouvelle série » serait ignorée d'ici là.
+        vm.ecrituresTerminees()
         assertEquals("14 kg × 10 ↓ …", etat.etatSuperset?.chaineDegressive(RoleSuperset.B))
         assertEquals("Curl", etat.etatSuperset?.nomVerrouille(RoleSuperset.B))
         assertEquals(listOf("Curl", "", ""), vm.valeurs(RoleSuperset.B))

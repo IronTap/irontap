@@ -1,6 +1,7 @@
 package app.irontap.ui.saisie
 
 import android.database.sqlite.SQLiteException
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
@@ -363,6 +364,12 @@ class SaisieViewModel(
                 afficherToast("Enregistrement impossible : stockage indisponible", erreur = true)
             }
         }.also { derniereEcriture = it }
+    }
+
+    /** Attend les écritures déjà lancées (elles s'enchaînent : la dernière suffit), pendant lesquelles les appuis sont ignorés. */
+    @VisibleForTesting
+    internal suspend fun attendreEcritures() {
+        derniereEcriture?.join()
     }
 
     // --- Chrono ---
