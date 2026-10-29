@@ -89,6 +89,8 @@ class SaisieCaptureTest {
         override fun commencerSuperset() = Unit
         override fun basculer(role: RoleSuperset) = Unit
         override fun memoriserSaisie() = Unit
+        override fun confirmerPassage() = Unit
+        override fun annulerPassage() = Unit
     }
 
     private fun afficher(
@@ -185,6 +187,16 @@ class SaisieCaptureTest {
     fun dialogueSimple() {
         afficher(exercices = listOf(tirage), formulaire = Formulaire(dialogue = DialogueFin.Simple))
         compose.waitForIdle()
+        captureScreenRoboImage()
+    }
+
+    /** « Nouvel exercice » avec les champs vides sur un exercice verrouillé (DECISIONS.md). */
+    @Test
+    fun dialoguePassage() {
+        afficher(exercices = listOf(tirageSerie3), formulaire = Formulaire(passage = PassageExercice.Simple("Tirage vertical", 2)))
+        compose.waitForIdle()
+        compose.onNode(hasText("Passer à l’exercice suivant ?")).assertIsDisplayed()
+        compose.onNode(hasClickAction() and hasText("Nouvel exercice")).assertHeightIsEqualTo(48.dp)
         captureScreenRoboImage()
     }
 
@@ -410,6 +422,15 @@ class SaisieCaptureTest {
         )
         compose.waitForIdle()
         compose.onNode(hasText("En superset avec Élévations latérales")).assertIsDisplayed()
+        captureScreenRoboImage()
+    }
+
+    /** « Nouvel exercice » avec les deux onglets vides : confirmation de la fin du superset. */
+    @Test
+    fun supersetPassage() {
+        supersetB(Formulaire(passage = PassageExercice.Superset(1)))
+        compose.waitForIdle()
+        compose.onNode(hasText("Terminer le superset ?")).assertIsDisplayed()
         captureScreenRoboImage()
     }
 

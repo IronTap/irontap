@@ -236,6 +236,21 @@ abstract class EntrainementDao {
         terminer(entrainementId, maintenant)
     }
 
+    /**
+     * « Nouvel exercice » confirmé sans rien de saisi (DECISIONS.md) : l'exercice courant reste tel quel et la
+     * prochaine série ouvrira un nouvel exercice. Rien n'est enregistré, le chrono n'est pas touché. Retourne
+     * `false` sans rien changer s'il n'y a pas d'exercice courant (nom pas verrouillé), si une dégressive ou un
+     * superset est en cours, ou si l'entraînement n'est plus en cours.
+     */
+    @Transaction
+    open suspend fun passerExercice(entrainementId: Long): Boolean {
+        val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return false
+        if (entrainement.nouvelExercice || lireDernierExercice(entrainementId) == null) return false
+        if (lirePaliersEnCours(entrainementId).isNotEmpty() || lireSupersetEnCours(entrainementId) != null) return false
+        modifierNouvelExercice(entrainementId, true)
+        return true
+    }
+
     // --- Superset (spec §4.3.10) ---
 
     /**

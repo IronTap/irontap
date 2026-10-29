@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -105,6 +106,26 @@ class EntrainementDaoTest {
             listOf("1.Tirage vertical: 1/40.0×15, 2/45.0×12", "2.Curl haltères: 1/12.5×12, 2/null×8"),
             resume(id),
         )
+    }
+
+    @Test
+    fun `passer a l'exercice suivant sans rien enregistrer, refuse pendant une degressive`() = runTest {
+        val id = creer()
+        // Pas encore d'exercice : rien à passer.
+        assertFalse(dao.passerExercice(id))
+        serie(id, nom = "Squat", realtime = 2_000)
+        val chrono = dao.lireChrono(id)
+        dao.ajouterPalierEnCours(id, "", 50.0, 10)
+        assertFalse(dao.passerExercice(id))
+
+        dao.enregistrerSerie(id, "", 30.0, 8, Suite.NouvelleSerie, t0, 2_000)
+        assertTrue(dao.passerExercice(id))
+        assertTrue(dao.lireEnCours()!!.nouvelExercice)
+        assertEquals(chrono, dao.lireChrono(id))
+        // Déjà sur un nouvel exercice.
+        assertFalse(dao.passerExercice(id))
+        serie(id, nom = "Fentes")
+        assertEquals(listOf("1.Squat: 1/40.0×10, 2/50.0×10↓30.0×8", "2.Fentes: 1/40.0×10"), resume(id))
     }
 
     @Test

@@ -136,6 +136,10 @@ interface ActionsSaisie {
     fun commencerSuperset()
     fun basculer(role: RoleSuperset)
 
+    /** « Passer à l'exercice suivant ? » / « Terminer le superset ? » : « Nouvel exercice ». */
+    fun confirmerPassage()
+    fun annulerPassage()
+
     /** Écran en arrière-plan : ce qui doit survivre à un kill est mémorisé (superset). */
     fun memoriserSaisie()
 }
@@ -328,6 +332,7 @@ fun ContenuSaisie(
         is DialogueFin.SupersetIncomplet -> DialogueFinSupersetIncomplet(dialogue, actions)
         DialogueFin.Simple -> DialogueFinSimple(actions)
     }
+    formulaire.passage?.let { DialoguePassage(it, actions) }
     formulaire.historique?.let { DialogueHistorique(it, actions::fermerHistorique) }
 }
 
@@ -804,6 +809,48 @@ private fun DialogueFinSimple(actions: ActionsSaisie) {
             BoutonPrincipal(
                 texte = "Terminer",
                 onClick = { actions.terminer(avecSerie = false) },
+                hauteur = 48.dp,
+                forme = Formes.Moyenne,
+                style = Typo.Action,
+                margeHorizontale = 22.dp,
+            )
+        }
+    }
+}
+
+/**
+ * « Nouvel exercice » sans rien de saisi, au style de 4b : « Passer à l'exercice suivant ? » (exercice verrouillé)
+ * ou « Terminer le superset ? » (deux onglets vides), « Annuler » / « Nouvel exercice ».
+ */
+@Composable
+private fun DialoguePassage(passage: PassageExercice, actions: ActionsSaisie) {
+    fun garde(series: Int) = if (series == 1) "sa série" else "ses $series séries"
+    val (titre, texte) = when (passage) {
+        is PassageExercice.Simple -> "Passer à l’exercice suivant ?" to buildAnnotatedString {
+            append("Les champs sont vides : la série ${passage.series + 1} ne sera pas enregistrée. ")
+            withStyle(SpanStyle(color = Couleurs.Texte)) { append(passage.nom) }
+            append(" garde ${garde(passage.series)}.")
+        }
+        is PassageExercice.Superset -> "Terminer le superset ?" to buildAnnotatedString {
+            if (passage.tours == 0) {
+                append("Les deux onglets sont vides : le superset se termine sans aucune série.")
+            } else {
+                append("Les deux onglets sont vides : la série ${passage.tours + 1} ne sera pas enregistrée. Le superset garde ${garde(passage.tours)}.")
+            }
+        }
+    }
+    DialogueNocturne(titre = titre, onFermer = actions::annulerPassage) {
+        Text(text = texte, style = Typo.CorpsDialogue, color = Couleurs.Neutre300)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        ) {
+            BoutonTexte("Annuler", onClick = actions::annulerPassage)
+            BoutonPrincipal(
+                texte = "Nouvel exercice",
+                onClick = actions::confirmerPassage,
                 hauteur = 48.dp,
                 forme = Formes.Moyenne,
                 style = Typo.Action,

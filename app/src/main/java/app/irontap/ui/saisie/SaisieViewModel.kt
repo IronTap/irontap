@@ -150,11 +150,22 @@ sealed interface DialogueFin {
     data class SupersetIncomplet(val role: RoleSuperset, val saisie: SaisieOnglet, val description: String) : DialogueFin
 }
 
+/** Confirmation de « Nouvel exercice » quand rien n'est saisi (DECISIONS.md) : on passe sans rien enregistrer. */
+sealed interface PassageExercice {
+    /** Exercice verrouillé [nom], qui garde ses [series] séries ; la suivante n'est pas enregistrée. */
+    data class Simple(val nom: String, val series: Int) : PassageExercice
+
+    /** Superset aux deux onglets vides, après [tours] tours enregistrés : il se termine. */
+    data class Superset(val tours: Int) : PassageExercice
+}
+
 /** État propre à l'écran, hors champs de saisie. */
 data class Formulaire(
     val erreurNom: Boolean = false,
     val erreurRepetitions: Boolean = false,
     val dialogue: DialogueFin? = null,
+    /** Dialogue « Passer à l'exercice suivant ? » / « Terminer le superset ? ». */
+    val passage: PassageExercice? = null,
     val toast: String? = null,
     /** Le toast signale un échec (icône d'erreur au lieu de ✓). */
     val toastErreur: Boolean = false,
@@ -395,6 +406,15 @@ class SaisieViewModel(
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
         if (enregistrement?.isActive == true) return
         enCours.etatSuperset?.let { return enregistrerTour(enCours, it, fin = suite == Suite.NouvelExercice) }
+        // « Nouvel exercice » sans rien de saisi (ni poids, ni répétitions, ni palier gardé) sur un exercice verrouillé :
+        // rien à enregistrer, on confirme qu'il faut passer au suivant. Un champ rempli garde la validation normale.
+        if (suite == Suite.NouvelExercice && enCours.verrouille && enCours.paliersPrecedents.isEmpty() && brouillon.principal.vide) {
+            val courant = enCours.exercices.last()
+            _formulaire.update {
+                it.copy(erreurNom = false, erreurRepetitions = false, passage = PassageExercice.Simple(courant.exercice.nom, courant.series.size))
+            }
+            return
+        }
         val serie = valider(enCours) ?: return
         enregistrement = ecrire {
             val enregistree = sauver(enCours, serie, suite)
@@ -523,37 +543,68 @@ class SaisieViewModel(
 
     /**
      * « Nouvelle série » : A et B ensemble, dans un même tour ; « Nouvel exercice » ([fin]) : les onglets non vides
-     * (ni poids, ni répétitions, ni palier gardé : ignoré), puis le superset se termine.
+     * (ni poids, ni répétitions, ni palier gardé : ignoré), puis le superset se termine. Les deux onglets vides : on
+     * confirme d'abord la fin du superset.
      */
     private fun enregistrerTour(enCours: EtatSaisie.EnCours, superset: EtatSuperset, fin: Boolean) {
         val roles = RoleSuperset.entries.filter { role -> !fin || !brouillon.champs(role).vide || superset.paliers(role).isNotEmpty() }
+        if (roles.isEmpty()) {
+            _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, passage = PassageExercice.Superset(superset.tour - 1)) }
+            return
+        }
         val saisies = HashMap<RoleSuperset, SaisieOnglet>()
         for (role in roles) saisies[role] = validerOnglet(superset, role) ?: return
-        enregistrement = ecrire {
-            val tour = dao.enregistrerTour(
-                entrainementId = enCours.entrainement.id,
-                a = saisies[RoleSuperset.A],
-                b = saisies[RoleSuperset.B],
-                fin = fin,
-                maintenant = horloge.maintenant(),
-                realtime = horloge.realtime(),
-            ) ?: return@ecrire
-            RoleSuperset.entries.forEach { brouillon.viderOnglet(it, nom = fin) }
-            brouillon.actif = RoleSuperset.A
-            _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
-            afficherToast(messageTour(tour))
+        enregistrement = ecrireTour(enCours, saisies, fin)
+    }
+
+    /** Écrit le tour des onglets [saisies], vide les onglets (et les noms si [fin]) et revient sur A. */
+    private fun ecrireTour(enCours: EtatSaisie.EnCours, saisies: Map<RoleSuperset, SaisieOnglet>, fin: Boolean) = ecrire {
+        val tour = dao.enregistrerTour(
+            entrainementId = enCours.entrainement.id,
+            a = saisies[RoleSuperset.A],
+            b = saisies[RoleSuperset.B],
+            fin = fin,
+            maintenant = horloge.maintenant(),
+            realtime = horloge.realtime(),
+        ) ?: return@ecrire
+        RoleSuperset.entries.forEach { brouillon.viderOnglet(it, nom = fin) }
+        brouillon.actif = RoleSuperset.A
+        _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
+        // Sans série (fin confirmée avec les deux onglets vides), pas de toast : les onglets disparaissent.
+        if (tour.series.isNotEmpty()) afficherToast(messageTour(tour))
+    }
+
+    /** « Série 2 enregistrée · A 8 kg × 12 · B 12 kg × 10 », ou « … · A seul · 8 kg × 12 ». */
+    private fun messageTour(tour: TourEnregistre): String {
+        val series = tour.series
+        return if (series.size == 1) {
+            series.entries.single().let { (role, serie) -> "Série ${tour.tour} enregistrée · $role seul · ${decrireSerie(serie.valeurs)}" }
+        } else {
+            "Série ${tour.tour} enregistrée · " + series.entries.joinToString(" · ") { (role, serie) -> "$role ${decrireSerie(serie.valeurs)}" }
         }
     }
 
-    /** « Série 2 enregistrée · A 8 kg × 12 · B 12 kg × 10 », « … · A seul · 8 kg × 12 », ou « Superset terminé ». */
-    private fun messageTour(tour: TourEnregistre): String {
-        val series = tour.series
-        return when (series.size) {
-            0 -> "Superset terminé"
-            1 -> series.entries.single().let { (role, serie) -> "Série ${tour.tour} enregistrée · $role seul · ${decrireSerie(serie.valeurs)}" }
-            else -> "Série ${tour.tour} enregistrée · " + series.entries.joinToString(" · ") { (role, serie) -> "$role ${decrireSerie(serie.valeurs)}" }
+    // --- Passer à l'exercice suivant sans rien enregistrer ---
+
+    /**
+     * Confirmation de « Nouvel exercice » sans rien de saisi : l'exercice courant (ou le superset) est laissé tel quel,
+     * le suivant sera nouveau. Rien n'est enregistré, le chrono n'est pas touché.
+     */
+    override fun confirmerPassage() {
+        val passage = _formulaire.value.passage ?: return
+        val enCours = etat.value as? EtatSaisie.EnCours ?: return
+        _formulaire.update { it.copy(passage = null) }
+        if (enregistrement?.isActive == true) return
+        enregistrement = when (passage) {
+            is PassageExercice.Simple -> ecrire {
+                // Refusé si un palier vient d'être gardé : le prochain appui fera la validation normale.
+                if (dao.passerExercice(enCours.entrainement.id)) vider(Suite.NouvelExercice)
+            }
+            is PassageExercice.Superset -> ecrireTour(enCours, emptyMap(), fin = true)
         }
     }
+
+    override fun annulerPassage() = _formulaire.update { it.copy(passage = null) }
 
     /** « Dégressive » sur l'onglet actif : le palier est gardé pour cet onglet, dont le nom se verrouille. */
     private fun degressiveSuperset(enCours: EtatSaisie.EnCours, superset: EtatSuperset) {

@@ -92,11 +92,15 @@ Spec §6, avec ces précisions :
   - Les exercices A et B ne sont créés qu'au premier tour enregistré, A puis B, pour garantir leur ordre : « Dégressive » sur un onglet garde le palier et mémorise son nom (verrouillé), sans créer l'exercice.
   - **Survie à un kill** : noms, onglet actif et valeurs saisies des deux onglets sont mémorisés en base à chaque bascule d'onglet et quand l'écran passe en arrière-plan (`ON_STOP`), le moment où Android peut tuer l'appli. Hors superset, les champs restent en mémoire comme avant (spec §7).
   - « Exercice N » compte un superset comme un seul exercice (prototype : A et B affichent le même N).
-  - Toasts : « Série k enregistrée · A … · B … », « … · A seul · … » (« Nouvel exercice » avec un onglet vide, prototype), « Superset terminé » si les deux étaient vides. Pour sortir d'un superset commencé par erreur : « Nouvel exercice » avec les onglets vides.
+  - Toasts : « Série k enregistrée · A … · B … », « … · A seul · … » (« Nouvel exercice » avec un onglet vide, prototype). Pour sortir d'un superset commencé par erreur : « Nouvel exercice » avec les onglets vides, après confirmation (cf. « Nouvel exercice » sans rien de saisi).
   - Un onglet compte comme saisi pour le dialogue de fin s'il a un nom et des répétitions valides, ou des paliers gardés.
   - Autocomplétion sur l'onglet actif modifiable : la liste s'affiche sous les deux onglets, sur toute leur largeur.
   - Ligne de la notification et du bandeau de l'accueil : « Élévations latérales + Curl marteau · Série 2 ».
   - Pastilles de 36 dp comme la maquette, dans une zone tactile de 48 dp.
+- **« Nouvel exercice » sans rien de saisi** (hors spec, demande de l'utilisateur) : un appui par erreur sur « Nouvelle série » verrouillait le nom avec des champs vides, et « Nouvel exercice » exigeait alors des répétitions.
+  - Nom verrouillé, ni poids, ni répétitions, ni palier gardé : dialogue au style de 4b, « Passer à l'exercice suivant ? », « Les champs sont vides : la série 4 ne sera pas enregistrée. Tirage vertical garde ses 3 séries. », « Annuler » / « Nouvel exercice ». Confirmé, l'exercice suivant s'ouvre (nom modifiable) sans rien enregistrer : pas de toast, chrono inchangé (aucune série enregistrée).
+  - Un champ rempli, ou un palier gardé : validation normale. Nom encore modifiable : rien à passer, erreurs habituelles.
+  - Superset aux deux onglets vides, même confirmation, « Terminer le superset ? » : un appui par erreur ne termine plus un superset, qu'on ne peut pas reprendre. Le toast « Superset terminé » disparaît, la confirmation le remplace. Un seul onglet vide reste ignoré sans confirmation (spec §4.3.10).
 - **Superset — détail** (H, 3·S+ T1) :
   - Appui sur le numéro d'un tour : « Modifier le tour N » (la maquette ne dit pas comment l'ouvrir). Le palier principal saisi remplace celui de la série, ses paliers dégressifs sont gardés ; un bloc vidé ne change pas la série (la supprimer passe par « Supprimer le tour »).
   - Indications d'« Ajouter un tour » : la dernière série de chaque exercice (maquette T1 : B reprend le tour 3 quand le tour 4 n'a pas de B).

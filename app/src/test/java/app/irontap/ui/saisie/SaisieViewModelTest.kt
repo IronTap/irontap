@@ -176,6 +176,75 @@ class SaisieViewModelTest {
         assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
     }
 
+    // --- « Nouvel exercice » sans rien de saisi (DECISIONS.md) ---
+
+    @Test
+    fun `nouvel exercice, champs vides et nom verrouille, confirmation puis exercice suivant sans rien enregistrer`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
+        horloge.realtime = 50_000
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        vm.ecrituresTerminees()
+        val chrono = dao.lireChrono(id)
+
+        // Appui par erreur sur « Nouvelle série » : rien n'est saisi, « Nouvel exercice » demande confirmation.
+        vm.enregistrer(Suite.NouvelExercice)
+        assertEquals(PassageExercice.Simple("Squat", 1), vm.formulaire.value.passage)
+        assertFalse(vm.formulaire.value.erreurRepetitions)
+        vm.annulerPassage()
+        assertNull(vm.formulaire.value.passage)
+        assertTrue(vm.enCours().verrouille)
+
+        vm.enregistrer(Suite.NouvelExercice)
+        horloge.realtime = 90_000
+        vm.confirmerPassage()
+        val apres = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == false } as EtatSaisie.EnCours
+        vm.ecrituresTerminees()
+        assertEquals(2 to 1, apres.numeroExercice to apres.numeroSerie)
+        assertEquals("", vm.nom.text.toString())
+        assertNull(vm.formulaire.value.passage)
+        assertEquals(chrono, dao.lireChrono(id))
+        assertEquals(listOf("Squat" to 1), dao.lireComplet(id)!!.exercices.map { it.exercice.nom to it.series.size })
+
+        // L'exercice suivant s'enregistre normalement.
+        vm.saisir(nom = "Fentes", repetitions = "10")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.nomVerrouille == "Fentes" }
+        assertEquals(listOf("Squat", "Fentes"), dao.lireComplet(id)!!.exercices.map { it.exercice.nom })
+    }
+
+    @Test
+    fun `nouvel exercice, champ partiellement rempli ou palier garde, validation normale`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        // Nom modifiable : rien à passer, les erreurs habituelles.
+        vm.enregistrer(Suite.NouvelExercice)
+        assertEquals(Formulaire(erreurNom = true, erreurRepetitions = true), vm.formulaire.value)
+
+        vm.saisir(nom = "Squat", repetitions = "5")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        vm.ecrituresTerminees()
+
+        vm.saisir(poids = "100")
+        vm.enregistrer(Suite.NouvelExercice)
+        assertTrue(vm.formulaire.value.erreurRepetitions)
+        assertNull(vm.formulaire.value.passage)
+
+        vm.saisir(repetitions = "5")
+        vm.degressive()
+        vm.paliersGardes(1)
+        vm.ecrituresTerminees()
+        vm.enregistrer(Suite.NouvelExercice)
+        assertTrue(vm.formulaire.value.erreurRepetitions)
+        assertNull(vm.formulaire.value.passage)
+        assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
+    }
+
     @Test
     fun `terminer enregistre la serie affichee dans le dialogue 4a`() = runTest {
         val id = creer()
@@ -612,6 +681,35 @@ class SaisieViewModelTest {
         assertTrue(apres.supersetPossible)
         assertEquals(listOf("", "", ""), vm.valeurs(RoleSuperset.A))
         assertEquals(listOf("Élévations"), dao.lireComplet(id)!!.exercices.map { it.exercice.nom })
+    }
+
+    @Test
+    fun `nouvel exercice avec les deux onglets vides, confirmation puis fin du superset sans toast`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "10")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
+        vm.ecrituresTerminees()
+        toasts.clear()
+        val chrono = dao.lireChrono(id)
+
+        vm.enregistrer(Suite.NouvelExercice)
+        assertEquals(PassageExercice.Superset(1), vm.formulaire.value.passage)
+        assertTrue(vm.enCours().superset != null)
+
+        vm.confirmerPassage()
+        val apres = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset == null } as EtatSaisie.EnCours
+        vm.ecrituresTerminees()
+        assertTrue(apres.supersetPossible)
+        assertEquals(2 to 1, apres.numeroExercice to apres.numeroSerie)
+        assertTrue(toasts.isEmpty())
+        assertEquals(chrono, dao.lireChrono(id))
+        assertEquals(listOf(1, 1), dao.lireComplet(id)!!.exercices.map { it.series.size })
     }
 
     @Test
