@@ -129,6 +129,49 @@ class EntrainementDaoTest {
     }
 
     @Test
+    fun `annuler le dernier enregistrement, refuse si une autre serie a suivi`() = runTest {
+        val id = creer()
+        serie(id, nom = "Squat", realtime = 1_000)
+        val premiere = checkNotNull(dao.enregistrerSerieAnnulable(id, "", 50.0, 8, Suite.NouvelExercice, t0, 2_000))
+        val seconde = checkNotNull(dao.enregistrerSerieAnnulable(id, "Fentes", 20.0, 10, Suite.NouvelleSerie, t0, 3_000))
+        assertEquals(listOf(seconde.valeur.serie.id), seconde.annulation.series)
+        assertEquals(1, seconde.annulation.exercicesCrees.size)
+
+        assertFalse(dao.annuler(premiere.annulation))
+        assertTrue(dao.annuler(seconde.annulation))
+        // L'exercice ouvert par la série disparaît ; on revient après « Nouvel exercice ». Le chrono continue.
+        assertEquals(listOf("1.Squat: 1/40.0×10, 2/50.0×8"), resume(id))
+        assertTrue(dao.lireEnCours()!!.nouvelExercice)
+        assertEquals(EtatChrono(id, Etat.EnCours, demarreA = 3_000), dao.lireChrono(id))
+        assertFalse(dao.annuler(seconde.annulation))
+
+        assertTrue(dao.annuler(premiere.annulation))
+        assertEquals(listOf("1.Squat: 1/40.0×10"), resume(id))
+        assertFalse(dao.lireEnCours()!!.nouvelExercice)
+        // Entraînement terminé entre-temps.
+        val troisieme = checkNotNull(dao.enregistrerSerieAnnulable(id, "", 50.0, 8, Suite.NouvelleSerie, t0, 0))
+        dao.terminer(id, t0)
+        assertFalse(dao.annuler(troisieme.annulation))
+    }
+
+    @Test
+    fun `annuler un premier tour A seul supprime l'exercice cree et retablit le superset et ses paliers`() = runTest {
+        val id = creer()
+        dao.commencerSuperset(id, "Élévations", "s1")
+        dao.ajouterPalierEnCours(id, "", 10.0, 12, RoleSuperset.A)
+        val tour = checkNotNull(dao.enregistrerTourAnnulable(id, SaisieOnglet("", 8.0, 10), null, fin = true, maintenant = t0, realtime = 0))
+        // A, resté seul, est devenu un exercice ordinaire, et le superset est terminé.
+        assertNull(exercices(id).single().exercice.supersetId)
+        assertNull(dao.lireEnCoursComplet()!!.superset)
+
+        assertTrue(dao.annuler(tour.annulation))
+        val enCours = checkNotNull(dao.lireEnCoursComplet())
+        assertTrue(enCours.exercices.isEmpty())
+        assertEquals("s1", enCours.superset?.supersetId)
+        assertEquals(listOf(RoleSuperset.A to ValeursPalier(10.0, 12)), enCours.paliersEnCours.map { it.role to it.valeurs })
+    }
+
+    @Test
     fun `un nouvel exercice sans nom n'enregistre rien`() = runTest {
         val id = creer()
         assertNull(serie(id, nom = "  "))

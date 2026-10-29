@@ -288,3 +288,21 @@ data class SaisieOnglet(val nom: String, val poidsKg: Double?, val repetitions: 
 
 /** Tour de superset enregistré : son numéro et la série de chaque onglet enregistré. */
 data class TourEnregistre(val tour: Int, val series: Map<RoleSuperset, SerieAvecPaliers>)
+
+/**
+ * De quoi annuler un enregistrement de série ou de tour depuis son toast (DECISIONS.md) : l'état de la saisie juste
+ * avant ([nouvelExercice], [exercices] avec leur superset, [paliersEnCours], [superset] en cours), puis ce que
+ * l'enregistrement a créé ([series], [exercicesCrees]). Le chrono n'en fait pas partie : il continue après une annulation.
+ */
+data class Annulation(
+    val entrainementId: Long,
+    val nouvelExercice: Boolean,
+    val exercices: List<Exercice>,
+    val paliersEnCours: List<PalierEnCours>,
+    val superset: SupersetEnCours?,
+    val series: List<Long> = emptyList(),
+    val exercicesCrees: List<Long> = emptyList(),
+)
+
+/** Ce qu'un enregistrement a produit ([valeur]), avec de quoi l'annuler. */
+data class Annulable<T>(val valeur: T, val annulation: Annulation)

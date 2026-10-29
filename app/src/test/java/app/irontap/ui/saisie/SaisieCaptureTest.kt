@@ -92,6 +92,7 @@ class SaisieCaptureTest {
         override fun memoriserSaisie() = Unit
         override fun confirmerPassage() = Unit
         override fun annulerPassage() = Unit
+        override fun annulerSerie() = Unit
     }
 
     private fun afficher(
@@ -160,10 +161,18 @@ class SaisieCaptureTest {
         afficher(
             exercices = listOf(tirage),
             chrono = EtatChrono(1, Etat.EnCours, demarreA = 0, cumulMs = 0),
-            formulaire = Formulaire(toast = "Série 1 enregistrée · 40 kg × 15"),
+            formulaire = Formulaire(toast = "Série 1 enregistrée · 40 kg × 15", toastAnnulable = true),
             poids = "45",
             repetitions = "12",
         )
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** Toast d'un tour de superset, sur deux lignes, avec « Annuler ». */
+    @Test
+    fun toastTourAnnulable() {
+        supersetB(Formulaire(toast = "Série 2 enregistrée · A 8 kg × 12 · B 12 kg × 10 ↓ 8 kg × 8", toastAnnulable = true))
+        compose.onNode(hasClickAction() and hasText("Annuler")).assertHeightIsEqualTo(48.dp)
         compose.onRoot().captureRoboImage()
     }
 

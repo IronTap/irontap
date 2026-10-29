@@ -140,6 +140,9 @@ interface ActionsSaisie {
     fun confirmerPassage()
     fun annulerPassage()
 
+    /** « Annuler » du toast « Série N enregistrée ». */
+    fun annulerSerie()
+
     /** Écran en arrière-plan : ce qui doit survivre à un kill est mémorisé (superset). */
     fun memoriserSaisie()
 }
@@ -318,6 +321,7 @@ fun ContenuSaisie(
         Toast(
             message = formulaire.toast,
             erreur = formulaire.toastErreur,
+            onAnnuler = if (formulaire.toastAnnulable) actions::annulerSerie else null,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .safeDrawingPadding()
@@ -727,19 +731,27 @@ private fun Actions(actions: ActionsSaisie, modifier: Modifier) {
     }
 }
 
-/** Toast : neutre-800, rayon 8, élévation md, ✓ accent-300 et texte 14 neutre-100. */
+/**
+ * Toast : neutre-800, rayon 8, élévation md, ✓ accent-300 et texte 14 neutre-100. [onAnnuler] : action « Annuler »
+ * en accent-300 à droite (zone tactile de 48 dp), le toast garde alors la hauteur de l'action.
+ */
 @Composable
-private fun Toast(message: String?, erreur: Boolean, modifier: Modifier) {
-    // Garde le dernier message pendant le fondu de sortie.
+private fun Toast(message: String?, erreur: Boolean, onAnnuler: (() -> Unit)?, modifier: Modifier) {
+    // Garde le dernier message, et son action, pendant le fondu de sortie.
     var dernier by remember { mutableStateOf("") }
-    if (message != null) dernier = message
+    var action by remember { mutableStateOf<(() -> Unit)?>(null) }
+    if (message != null) {
+        dernier = message
+        action = onAnnuler
+    }
     AnimatedVisibility(visible = message != null, modifier = modifier, enter = fadeIn(), exit = fadeOut()) {
+        val annuler = action
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .elevation(Elevation.Md, Formes.Moyenne)
                 .background(Couleurs.Neutre800, Formes.Moyenne)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(start = 14.dp, end = if (annuler != null) 2.dp else 14.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -748,7 +760,15 @@ private fun Toast(message: String?, erreur: Boolean, modifier: Modifier) {
             } else {
                 Icone(R.drawable.ic_check, taille = 18.dp, couleur = Couleurs.Accent300)
             }
-            Text(dernier, style = Typo.Secondaire, color = Couleurs.Neutre100)
+            Text(
+                text = dernier,
+                style = Typo.Secondaire,
+                color = Couleurs.Neutre100,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(vertical = 12.dp),
+            )
+            if (annuler != null) BoutonTexte("Annuler", onClick = annuler, margeHorizontale = 12.dp)
         }
     }
 }

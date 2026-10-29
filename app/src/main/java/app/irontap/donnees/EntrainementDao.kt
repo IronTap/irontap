@@ -324,6 +324,79 @@ abstract class EntrainementDao {
         return TourEnregistre(tour, series)
     }
 
+    // --- Annulation du dernier enregistrement (toast « Annuler », DECISIONS.md) ---
+
+    /** [enregistrerSerie], avec de quoi l'annuler. */
+    @Transaction
+    open suspend fun enregistrerSerieAnnulable(
+        entrainementId: Long,
+        nomExercice: String,
+        poidsKg: Double?,
+        repetitions: Int?,
+        suite: Suite,
+        maintenant: Instant,
+        realtime: Long,
+    ): Annulable<SerieAvecPaliers>? {
+        val avant = etatAvant(entrainementId) ?: return null
+        val serie = enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, suite, maintenant, realtime) ?: return null
+        return Annulable(serie, avant.apres(listOf(serie.serie.id)))
+    }
+
+    /** [enregistrerTour], avec de quoi l'annuler (un tour sans série n'a rien à annuler : `null`). */
+    @Transaction
+    open suspend fun enregistrerTourAnnulable(
+        entrainementId: Long,
+        a: SaisieOnglet?,
+        b: SaisieOnglet?,
+        fin: Boolean,
+        maintenant: Instant,
+        realtime: Long,
+    ): Annulable<TourEnregistre>? {
+        val avant = etatAvant(entrainementId) ?: return null
+        val tour = enregistrerTour(entrainementId, a, b, fin, maintenant, realtime) ?: return null
+        return Annulable(tour, avant.apres(tour.series.values.map { it.serie.id }))
+    }
+
+    private suspend fun etatAvant(entrainementId: Long): Annulation? {
+        val entrainement = lire(entrainementId) ?: return null
+        return Annulation(
+            entrainementId = entrainementId,
+            nouvelExercice = entrainement.nouvelExercice,
+            exercices = lireExercices(entrainementId),
+            paliersEnCours = lirePaliersEnCours(entrainementId),
+            superset = lireSupersetEnCours(entrainementId),
+        )
+    }
+
+    private suspend fun Annulation.apres(series: List<Long>): Annulation {
+        val existants = exercices.mapTo(HashSet()) { it.id }
+        return copy(series = series, exercicesCrees = lireExercices(entrainementId).map { it.id }.filter { it !in existants })
+    }
+
+    /**
+     * Annule l'enregistrement décrit par [annulation] : ses séries, et les exercices créés avec elles, sont supprimés ;
+     * la saisie retrouve son état d'avant (exercice courant ou nouveau, paliers gardés, superset en cours, exercices
+     * de nouveau dans leur superset). Le chrono n'est pas touché. Retourne `false` sans rien changer si l'entraînement
+     * n'est plus en cours, ou si autre chose a été enregistré depuis (série, palier gardé, exercice).
+     */
+    @Transaction
+    open suspend fun annuler(annulation: Annulation): Boolean {
+        val id = annulation.entrainementId
+        lire(id)?.takeIf { it.termineLe == null } ?: return false
+        if (annulation.series.isEmpty() || lireDerniereSerie(id) != annulation.series.max()) return false
+        if (annulation.series.any { lireSerie(it) == null } || lirePaliersEnCours(id).isNotEmpty()) return false
+        val exercices = annulation.exercices.map { it.id } + annulation.exercicesCrees
+        if (lireExercices(id).map { it.id }.toSet() != exercices.toSet()) return false
+        annulation.series.forEach { supprimerSerieBrut(it) }
+        annulation.exercicesCrees.forEach { supprimerExercice(it) }
+        annulation.exercices.forEach { modifierSupersetExercice(it.id, it.supersetId, it.supersetRole) }
+        modifierNouvelExercice(id, annulation.nouvelExercice)
+        annulation.paliersEnCours.forEach { inserer(it.copy(id = 0)) }
+        supprimerSupersetEnCours(id)
+        annulation.superset?.let { inserer(it) }
+        return true
+    }
+
     /** Dialogues de fin d'un superset (4a, série incomplète) : le tour, puis la fin de l'entraînement, ensemble. */
     @Transaction
     open suspend fun enregistrerTourEtTerminer(
@@ -483,6 +556,16 @@ abstract class EntrainementDao {
 
     @Query("SELECT * FROM exercice WHERE entrainement_id = :entrainementId ORDER BY ordre DESC LIMIT 1")
     protected abstract suspend fun lireDernierExercice(entrainementId: Long): Exercice?
+
+    @Query("SELECT * FROM exercice WHERE entrainement_id = :entrainementId ORDER BY ordre")
+    protected abstract suspend fun lireExercices(entrainementId: Long): List<Exercice>
+
+    /** Identifiant de la dernière série enregistrée de l'entraînement (identifiants croissants, jamais réutilisés). */
+    @Query("SELECT MAX(s.id) FROM serie s JOIN exercice x ON x.id = s.exercice_id WHERE x.entrainement_id = :entrainementId")
+    protected abstract suspend fun lireDerniereSerie(entrainementId: Long): Long?
+
+    @Query("UPDATE exercice SET superset_id = :supersetId, superset_role = :role WHERE id = :id")
+    protected abstract suspend fun modifierSupersetExercice(id: Long, supersetId: String?, role: RoleSuperset?)
 
     @Query("SELECT DISTINCT nom FROM exercice WHERE entrainement_id != :entrainementId")
     protected abstract suspend fun lireNomsExercicesHors(entrainementId: Long): List<String>

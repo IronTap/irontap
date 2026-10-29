@@ -22,6 +22,7 @@ import java.time.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -79,9 +80,12 @@ class SaisieViewModelTest {
     private val toasts = CopyOnWriteArrayList<String>()
 
     /** ViewModel abonné comme par l'écran ; les coroutines du ViewModel s'exécutent sur le dispatcher du test. */
-    private fun TestScope.ecran(brouillon: BrouillonSaisie = this@SaisieViewModelTest.brouillon): SaisieViewModel {
+    private fun TestScope.ecran(
+        brouillon: BrouillonSaisie = this@SaisieViewModelTest.brouillon,
+        attendreToast: suspend (Long, Boolean) -> Unit = { duree, _ -> delay(duree) },
+    ): SaisieViewModel {
         Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
-        return vms.garder(SaisieViewModel(dao, horloge, brouillon)).also { vm ->
+        return vms.garder(SaisieViewModel(dao, horloge, brouillon, attendreToast)).also { vm ->
             backgroundScope.launch { vm.etat.collect {} }
             backgroundScope.launch { vm.suggestions.collect {} }
             backgroundScope.launch { vm.formulaire.collect { f -> f.toast?.let { if (toasts.lastOrNull() != it) toasts += it } } }
@@ -242,6 +246,122 @@ class SaisieViewModelTest {
         vm.enregistrer(Suite.NouvelExercice)
         assertTrue(vm.formulaire.value.erreurRepetitions)
         assertNull(vm.formulaire.value.passage)
+        assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
+    }
+
+    // --- Annuler la dernière série (DECISIONS.md) ---
+
+    /** Toasts qui restent affichés : le temps virtuel ne retire pas l'annulation pendant que le test attend la base. */
+    private val toastsPermanents: suspend (Long, Boolean) -> Unit = { _, _ -> awaitCancellation() }
+
+    @Test
+    fun `annuler la serie remet ses valeurs dans les champs, le chrono continue`() = runTest {
+        val id = creer()
+        val vm = ecran(attendreToast = toastsPermanents)
+        vm.enCours()
+        vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
+        horloge.realtime = 50_000
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        vm.ecrituresTerminees()
+        assertTrue(vm.formulaire.value.toastAnnulable)
+        val chrono = EtatChrono(id, EtatChrono.Etat.EnCours, demarreA = 50_000)
+        assertEquals(chrono, dao.lireChrono(id))
+
+        horloge.realtime = 53_000
+        vm.annulerSerie()
+        // Première série de l'exercice : l'exercice disparaît, le nom redevient modifiable, rempli.
+        val annulee = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.exercices?.isEmpty() == true } as EtatSaisie.EnCours
+        vm.ecrituresTerminees()
+        assertFalse(annulee.verrouille)
+        assertEquals(1 to 1, annulee.numeroExercice to annulee.numeroSerie)
+        assertEquals(listOf("Squat", "100", "5"), vm.valeurs(RoleSuperset.A))
+        assertEquals("Série 1 annulée", dernierToast())
+        assertFalse(vm.formulaire.value.toastAnnulable)
+        assertEquals(chrono, dao.lireChrono(id))
+
+        // Un seul niveau : plus rien à annuler.
+        vm.annulerSerie()
+        vm.ecrituresTerminees()
+        assertEquals("Série 1 annulée", dernierToast())
+
+        vm.saisir(repetitions = "6")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        assertEquals("Série 1 enregistrée · 100 kg × 6", dernierToast())
+        assertEquals(listOf(listOf(ValeursPalier(100.0, 6))), dao.lireComplet(id)!!.exercices.single().series.map { it.valeurs })
+    }
+
+    @Test
+    fun `annuler une degressive suivie de nouvel exercice revient sur l'exercice et ses paliers gardes`() = runTest {
+        val id = creer()
+        val vm = ecran(attendreToast = toastsPermanents)
+        vm.enCours()
+        vm.saisir(nom = "Tirage", poids = "40", repetitions = "15")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        vm.ecrituresTerminees()
+        vm.saisir(poids = "50", repetitions = "10")
+        vm.degressive()
+        vm.paliersGardes(1)
+        vm.ecrituresTerminees()
+        vm.saisir(poids = "30", repetitions = "8")
+        vm.enregistrer(Suite.NouvelExercice)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == false }
+        vm.ecrituresTerminees()
+        assertEquals("", vm.nom.text.toString())
+
+        vm.annulerSerie()
+        val etat = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.let { e -> e.verrouille && e.paliersEnCours.size == 1 } == true } as EtatSaisie.EnCours
+        vm.ecrituresTerminees()
+        assertEquals("Tirage", etat.nomVerrouille)
+        assertEquals(1 to 2, etat.numeroExercice to etat.numeroSerie)
+        assertEquals("50 kg × 10 ↓ …", etat.chaineDegressive)
+        assertEquals(listOf("Tirage", "30", "8"), vm.valeurs(RoleSuperset.A))
+        assertEquals("Série 2 annulée", dernierToast())
+        assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
+
+        // Corrigée, la série reprend ses paliers.
+        vm.saisir(repetitions = "9")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
+        assertEquals("Série 2 enregistrée · 50 kg × 10 ↓ 30 kg × 9", dernierToast())
+    }
+
+    @Test
+    fun `une autre ecriture retire l'annulation`() = runTest {
+        val id = creer()
+        val vm = ecran(attendreToast = toastsPermanents)
+        vm.enCours()
+        vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        vm.ecrituresTerminees()
+
+        vm.saisir(poids = "80", repetitions = "8")
+        vm.degressive()
+        assertNull(vm.formulaire.value.toast)
+        vm.paliersGardes(1)
+        vm.ecrituresTerminees()
+        vm.annulerSerie()
+        vm.ecrituresTerminees()
+        assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
+        assertEquals(1, dao.lireEnCoursComplet()!!.paliersEnCours.size)
+    }
+
+    @Test
+    fun `annulation retiree a la fin du toast`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.verrouille == true }
+        vm.ecrituresTerminees()
+        // Le temps virtuel a déjà écoulé les 5 s du toast.
+        vm.formulaire.attendre { it.toast == null }
+        vm.annulerSerie()
+        vm.ecrituresTerminees()
         assertEquals(1, dao.lireComplet(id)!!.exercices.single().series.size)
     }
 
@@ -710,6 +830,44 @@ class SaisieViewModelTest {
         assertTrue(toasts.isEmpty())
         assertEquals(chrono, dao.lireChrono(id))
         assertEquals(listOf(1, 1), dao.lireComplet(id)!!.exercices.map { it.series.size })
+    }
+
+    @Test
+    fun `annuler un tour A seul suivi de nouvel exercice retablit le superset et ses onglets`() = runTest {
+        val id = creer()
+        val vm = ecran(attendreToast = toastsPermanents)
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "10")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
+        vm.ecrituresTerminees()
+        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 10", dernierToast())
+
+        vm.saisirOnglet(RoleSuperset.A, poids = "8", repetitions = "12")
+        vm.enregistrer(Suite.NouvelExercice)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset == null }
+        vm.ecrituresTerminees()
+        assertEquals("Série 2 enregistrée · A seul · 8 kg × 12", dernierToast())
+
+        vm.annulerSerie()
+        val etat = vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset != null } as EtatSaisie.EnCours
+        vm.ecrituresTerminees()
+        assertEquals(2, etat.etatSuperset?.tour)
+        assertEquals(RoleSuperset.A, vm.ongletActif)
+        assertEquals(listOf("Élévations", "8", "12"), vm.valeurs(RoleSuperset.A))
+        assertEquals(listOf("Curl", "", ""), vm.valeurs(RoleSuperset.B))
+        assertEquals("Série 2 annulée", dernierToast())
+        assertEquals(listOf(1, 1), dao.lireComplet(id)!!.exercices.map { it.series.size })
+        // Valeurs rétablies mémorisées : elles survivraient à un kill.
+        assertEquals("12", dao.lireEnCoursComplet()!!.superset?.repetitionsA)
+
+        vm.saisirOnglet(RoleSuperset.B, poids = "12", repetitions = "9")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
+        assertEquals("Série 2 enregistrée · A 8 kg × 12 · B 12 kg × 9", dernierToast())
     }
 
     @Test

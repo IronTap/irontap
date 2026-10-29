@@ -1,6 +1,8 @@
 package app.irontap.ui.saisie
 
 import android.database.sqlite.SQLiteException
+import android.os.Build
+import android.view.accessibility.AccessibilityManager
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
@@ -15,6 +17,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.irontap.IronTapApplication
+import app.irontap.donnees.Annulable
+import app.irontap.donnees.Annulation
 import app.irontap.donnees.Entrainement
 import app.irontap.donnees.EntrainementDao
 import app.irontap.donnees.EntrainementDao.Suite
@@ -169,6 +173,8 @@ data class Formulaire(
     val toast: String? = null,
     /** Le toast signale un échec (icône d'erreur au lieu de ✓). */
     val toastErreur: Boolean = false,
+    /** Le toast confirme un enregistrement qu'« Annuler » peut défaire. */
+    val toastAnnulable: Boolean = false,
     /** Dernière suggestion choisie : la liste reste fermée tant que le nom n'est pas retouché. */
     val nomChoisi: String? = null,
     /** Popup « Historique de l'exercice » ouverte (3g, spec §4.3.8). */
@@ -234,6 +240,22 @@ class BrouillonSaisie {
         actif = superset.actif
     }
 
+    /** Texte des champs des deux onglets et onglet actif, à remettre si l'enregistrement est annulé. */
+    data class Copie(val a: List<String>, val b: List<String>, val actif: RoleSuperset)
+
+    fun copie() = Copie(principal.textes(), ongletB.textes(), actif)
+
+    fun retablir(copie: Copie) {
+        principal.remplir(copie.a)
+        ongletB.remplir(copie.b)
+        actif = copie.actif
+    }
+
+    private fun ChampsOnglet.textes() = listOf(nom, poids, repetitions).map { it.text.toString() }
+
+    private fun ChampsOnglet.remplir(textes: List<String>) =
+        listOf(nom, poids, repetitions).zip(textes).forEach { (champ, texte) -> champ.setTextAndPlaceCursorAtEnd(texte) }
+
     /** État du superset à mémoriser : celui de la base, avec les noms, valeurs et onglet du brouillon. */
     fun instantane(superset: SupersetEnCours) = superset.copy(
         nomA = principal.nom.text.toString(),
@@ -246,11 +268,15 @@ class BrouillonSaisie {
     )
 }
 
-/** Saisie des séries de l'entraînement en cours (écran 3, spec §4.3). */
+/**
+ * Saisie des séries de l'entraînement en cours (écran 3, spec §4.3). [attendreToast] patiente le temps d'affichage
+ * d'un toast (sa durée nominale, et s'il porte une action), allongé par le réglage d'accessibilité d'Android.
+ */
 class SaisieViewModel(
     private val dao: EntrainementDao,
     private val horloge: Horloge,
     private val brouillon: BrouillonSaisie,
+    private val attendreToast: suspend (dureeMs: Long, action: Boolean) -> Unit = { duree, _ -> delay(duree) },
 ) : ViewModel(), ActionsSaisie {
 
     val nom = brouillon.nom
@@ -332,6 +358,11 @@ class SaisieViewModel(
     private var enregistrement: Job? = null
 
     private var toastJob: Job? = null
+
+    /** Dernier enregistrement, annulable tant que son toast est affiché, et ce qu'il faut remettre dans les champs. */
+    private class Dernier(val annulation: Annulation, val copie: BrouillonSaisie.Copie, val numero: Int)
+
+    private var dernier: Dernier? = null
 
     /** Lecture de l'historique en cours : un double appui n'ouvre pas deux fois la popup. */
     private var lectureHistorique: Job? = null
@@ -416,12 +447,16 @@ class SaisieViewModel(
             return
         }
         val serie = valider(enCours) ?: return
+        val copie = brouillon.copie()
+        retirerAnnulation()
         enregistrement = ecrire {
             val enregistree = sauver(enCours, serie, suite)
             if (enregistree != null) {
                 vider(suite)
+                val (valeur, annulation) = enregistree
+                dernier = Dernier(annulation, copie, valeur.serie.ordre)
                 // Paliers lus en base : ceux d'une dégressive commencée avant un retour à l'accueil compris.
-                afficherToast("Série ${enregistree.serie.ordre} enregistrée · ${decrireSerie(enregistree.valeurs)}")
+                afficherToast("Série ${valeur.serie.ordre} enregistrée · ${decrireSerie(valeur.valeurs)}", annulable = true)
             } else if (serie.nom.isBlank()) {
                 // Écran en retard sur la base : le nom était requis alors qu'il semblait verrouillé.
                 _formulaire.update { it.copy(erreurNom = true) }
@@ -439,6 +474,7 @@ class SaisieViewModel(
         enCours.etatSuperset?.let { return degressiveSuperset(enCours, it) }
         val serie = valider(enCours) ?: return
         val palier = checkNotNull(serie.courant)
+        retirerAnnulation()
         enregistrement = ecrire {
             val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, serie.nom, palier.poidsKg, palier.repetitions)
             if (garde != null) {
@@ -458,8 +494,8 @@ class SaisieViewModel(
         return SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, ValeursPalier(lirePoids(poids.text.toString()), repetitions))
     }
 
-    private suspend fun sauver(enCours: EtatSaisie.EnCours, serie: SerieSaisie, suite: Suite): SerieAvecPaliers? =
-        dao.enregistrerSerie(
+    private suspend fun sauver(enCours: EtatSaisie.EnCours, serie: SerieSaisie, suite: Suite): Annulable<SerieAvecPaliers>? =
+        dao.enregistrerSerieAnnulable(
             entrainementId = enCours.entrainement.id,
             nomExercice = serie.nom,
             poidsKg = serie.courant?.poidsKg,
@@ -479,12 +515,52 @@ class SaisieViewModel(
         _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = choisi) }
     }
 
-    private fun afficherToast(message: String, erreur: Boolean = false) {
+    /**
+     * Toast de 2,6 s ; [annulable] : il confirme le [dernier] enregistrement, qu'« Annuler » défait tant qu'il est
+     * affiché (5 s). Tout autre toast le remplace et retire l'annulation.
+     */
+    private fun afficherToast(message: String, erreur: Boolean = false, annulable: Boolean = false) {
         toastJob?.cancel()
-        _formulaire.update { it.copy(toast = message, toastErreur = erreur) }
+        if (!annulable) dernier = null
+        _formulaire.update { it.copy(toast = message, toastErreur = erreur, toastAnnulable = annulable) }
         toastJob = viewModelScope.launch {
-            delay(DUREE_TOAST_MS)
-            _formulaire.update { it.copy(toast = null) }
+            attendreToast(if (annulable) DUREE_TOAST_ANNULABLE_MS else DUREE_TOAST_MS, annulable)
+            dernier = null
+            _formulaire.update { it.copy(toast = null, toastAnnulable = false) }
+        }
+    }
+
+    /** Une autre écriture commence (série, palier, superset) : le dernier enregistrement n'est plus annulable. */
+    private fun retirerAnnulation() {
+        dernier = null
+        if (_formulaire.value.toastAnnulable) {
+            toastJob?.cancel()
+            _formulaire.update { it.copy(toast = null, toastAnnulable = false) }
+        }
+    }
+
+    /**
+     * « Annuler » du toast : le dernier enregistrement (série, dégressive, tour de superset, y compris suivi de
+     * « Nouvel exercice ») est supprimé et la saisie revient à son état d'avant l'appui, valeurs remises dans les
+     * champs. Le chrono continue.
+     */
+    override fun annulerSerie() {
+        val annule = dernier ?: return
+        if (enregistrement?.isActive == true) return
+        dernier = null
+        toastJob?.cancel()
+        _formulaire.update { it.copy(toast = null, toastAnnulable = false) }
+        enregistrement = ecrire {
+            if (!dao.annuler(annule.annulation)) {
+                afficherToast("Annulation impossible", erreur = true)
+                return@ecrire
+            }
+            brouillon.retablir(annule.copie)
+            // Nom remis tel quel : pas de suggestions tant qu'il n'est pas retouché.
+            val nom = brouillon.champs(brouillon.actif).nom.text.toString()
+            _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = nom) }
+            annule.annulation.superset?.let { dao.memoriserSuperset(brouillon.instantane(it)) }
+            afficherToast("Série ${annule.numero} annulée")
         }
     }
 
@@ -494,6 +570,7 @@ class SaisieViewModel(
     override fun commencerSuperset() {
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
         if (!enCours.supersetPossible || enregistrement?.isActive == true) return
+        retirerAnnulation()
         enregistrement = ecrire {
             val superset = dao.commencerSuperset(enCours.entrainement.id, nom.text.toString(), UUID.randomUUID().toString())
             if (superset != null) {
@@ -557,21 +634,32 @@ class SaisieViewModel(
         enregistrement = ecrireTour(enCours, saisies, fin)
     }
 
-    /** Écrit le tour des onglets [saisies], vide les onglets (et les noms si [fin]) et revient sur A. */
-    private fun ecrireTour(enCours: EtatSaisie.EnCours, saisies: Map<RoleSuperset, SaisieOnglet>, fin: Boolean) = ecrire {
-        val tour = dao.enregistrerTour(
-            entrainementId = enCours.entrainement.id,
-            a = saisies[RoleSuperset.A],
-            b = saisies[RoleSuperset.B],
-            fin = fin,
-            maintenant = horloge.maintenant(),
-            realtime = horloge.realtime(),
-        ) ?: return@ecrire
-        RoleSuperset.entries.forEach { brouillon.viderOnglet(it, nom = fin) }
-        brouillon.actif = RoleSuperset.A
-        _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
-        // Sans série (fin confirmée avec les deux onglets vides), pas de toast : les onglets disparaissent.
-        if (tour.series.isNotEmpty()) afficherToast(messageTour(tour))
+    /**
+     * Écrit le tour des onglets [saisies], vide les onglets (et les noms si [fin]) et revient sur A. Un tour avec au
+     * moins une série est annulable depuis son toast.
+     */
+    private fun ecrireTour(enCours: EtatSaisie.EnCours, saisies: Map<RoleSuperset, SaisieOnglet>, fin: Boolean): Job {
+        val copie = brouillon.copie()
+        retirerAnnulation()
+        return ecrire {
+            val enregistre = dao.enregistrerTourAnnulable(
+                entrainementId = enCours.entrainement.id,
+                a = saisies[RoleSuperset.A],
+                b = saisies[RoleSuperset.B],
+                fin = fin,
+                maintenant = horloge.maintenant(),
+                realtime = horloge.realtime(),
+            ) ?: return@ecrire
+            val (tour, annulation) = enregistre
+            RoleSuperset.entries.forEach { brouillon.viderOnglet(it, nom = fin) }
+            brouillon.actif = RoleSuperset.A
+            _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = null) }
+            // Sans série (fin confirmée avec les deux onglets vides), pas de toast : les onglets disparaissent.
+            if (tour.series.isNotEmpty()) {
+                dernier = Dernier(annulation, copie, tour.tour)
+                afficherToast(messageTour(tour), annulable = true)
+            }
+        }
     }
 
     /** « Série 2 enregistrée · A 8 kg × 12 · B 12 kg × 10 », ou « … · A seul · 8 kg × 12 ». */
@@ -596,9 +684,12 @@ class SaisieViewModel(
         _formulaire.update { it.copy(passage = null) }
         if (enregistrement?.isActive == true) return
         enregistrement = when (passage) {
-            is PassageExercice.Simple -> ecrire {
-                // Refusé si un palier vient d'être gardé : le prochain appui fera la validation normale.
-                if (dao.passerExercice(enCours.entrainement.id)) vider(Suite.NouvelExercice)
+            is PassageExercice.Simple -> {
+                retirerAnnulation()
+                ecrire {
+                    // Refusé si un palier vient d'être gardé : le prochain appui fera la validation normale.
+                    if (dao.passerExercice(enCours.entrainement.id)) vider(Suite.NouvelExercice)
+                }
             }
             is PassageExercice.Superset -> ecrireTour(enCours, emptyMap(), fin = true)
         }
@@ -611,6 +702,7 @@ class SaisieViewModel(
         val role = brouillon.actif
         val saisie = validerOnglet(superset, role) ?: return
         val repetitions = checkNotNull(saisie.repetitions)
+        retirerAnnulation()
         enregistrement = ecrire {
             val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, saisie.nom, saisie.poidsKg, repetitions, role)
             if (garde != null) {
@@ -733,10 +825,24 @@ class SaisieViewModel(
     companion object {
         const val DUREE_TOAST_MS = 2_600L
 
+        /** Toast avec « Annuler » (DECISIONS.md). */
+        const val DUREE_TOAST_ANNULABLE_MS = 5_000L
+
         val Fabrique = viewModelFactory {
             initializer {
-                val conteneur = (this[APPLICATION_KEY] as IronTapApplication).container
-                SaisieViewModel(conteneur.base.entrainements(), conteneur.horloge, conteneur.brouillonSaisie)
+                val application = this[APPLICATION_KEY] as IronTapApplication
+                val conteneur = application.container
+                val accessibilite = application.getSystemService(AccessibilityManager::class.java)
+                SaisieViewModel(conteneur.base.entrainements(), conteneur.horloge, conteneur.brouillonSaisie) { duree, action ->
+                    // Réglage « Délai de réaction » d'Android (10+) : il peut allonger le toast, jamais le raccourcir.
+                    val recommandee = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && accessibilite != null) {
+                        val contenu = AccessibilityManager.FLAG_CONTENT_TEXT or if (action) AccessibilityManager.FLAG_CONTENT_CONTROLS else 0
+                        accessibilite.getRecommendedTimeoutMillis(duree.toInt(), contenu).toLong()
+                    } else {
+                        duree
+                    }
+                    delay(maxOf(duree, recommandee))
+                }
             }
         }
     }
