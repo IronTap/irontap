@@ -1,0 +1,1 @@
++2 kg quick add for weight. Undo the last set right from the confirmation message. Tapping “new exercise” with empty fields now offers to move on to the next exercise instead of getting stuck. Supersets now appear in plain text and CSV exports. Import a CSV export to restore your history, from the Export sheet or the empty home screen.

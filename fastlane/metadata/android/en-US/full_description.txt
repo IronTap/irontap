@@ -10,7 +10,7 @@
 <li>Exercise history in one tap, without leaving the entry screen</li>
 <li>Drop sets: as many steps as you want within a single set</li>
 <li>Supersets: two exercises back to back, one tab each</li>
-<li>Edit and delete sets and workouts</li>
+<li>Undo the last set, edit and delete sets and workouts</li>
 <li>Export as plain text or CSV, to share or save as a file, and import a CSV export to restore your history</li>
 </ul>
 

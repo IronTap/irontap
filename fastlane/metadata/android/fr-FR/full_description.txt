@@ -8,7 +8,7 @@
 <li>Historique de l’exercice en un appui, sans quitter la saisie</li>
 <li>Séries dégressives : autant de paliers que tu veux dans une même série</li>
 <li>Supersets : deux exercices enchaînés, un onglet chacun</li>
-<li>Modification et suppression des séries et des entraînements</li>
+<li>Annulation de la dernière série, modification et suppression des séries et des entraînements</li>
 <li>Export en texte ou en CSV, à partager ou à enregistrer, et import d’un export CSV pour retrouver ton historique</li>
 </ul>
 

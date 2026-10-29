@@ -1,0 +1,1 @@
+Ajout rapide +2 kg sur le poids. « Annuler » dans le message « Série N enregistrée » pour revenir sur la dernière série. « Nouvel exercice » avec des champs vides propose de passer à l’exercice suivant au lieu de bloquer. Les supersets apparaissent dans l’export texte et CSV. Import d’un export CSV pour restaurer l’historique, depuis la feuille Exporter ou l’accueil vide.
