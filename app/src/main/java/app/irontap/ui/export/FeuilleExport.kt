@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +46,7 @@ import app.irontap.R
 import app.irontap.logique.FormatExport
 import app.irontap.ui.composants.BoutonContour
 import app.irontap.ui.composants.BoutonPrincipal
+import app.irontap.ui.composants.BoutonTexte
 import app.irontap.ui.composants.FeuilleNocturne
 import app.irontap.ui.composants.MessageErreur
 import app.irontap.ui.theme.Couleurs
@@ -58,16 +60,20 @@ interface ActionsExport {
     fun partager()
     fun enregistrer()
     fun fermer()
+
+    /** « Importer un fichier CSV… » (accueil seulement) : la feuille se referme, puis le sélecteur de document s'ouvre. */
+    fun importer()
 }
 
 /**
  * Écran 8 (spec §5) : feuille « Exporter », de l'accueil (tout l'historique) ou du menu ⋮ du détail
  * (cet entraînement). Partager ou enregistrer referme la feuille une fois l'opération faite ; un échec
- * s'affiche dans la feuille, qui reste ouverte.
+ * s'affiche dans la feuille, qui reste ouverte. [onImporter] (accueil) : lien « Importer un fichier CSV… »,
+ * appelé une fois la feuille refermée.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeuilleExport(vm: ExportViewModel, onFermer: () -> Unit) {
+fun FeuilleExport(vm: ExportViewModel, onFermer: () -> Unit, onImporter: (() -> Unit)? = null) {
     val etat by vm.etat.collectAsStateWithLifecycle()
     val format by vm.format.collectAsStateWithLifecycle()
     val operation by vm.operation.collectAsStateWithLifecycle()
@@ -75,10 +81,11 @@ fun FeuilleExport(vm: ExportViewModel, onFermer: () -> Unit) {
     val scope = rememberCoroutineScope()
     val feuille = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    fun fermer() {
+    fun fermer(ensuite: () -> Unit = {}) {
         scope.launch { feuille.hide() }.invokeOnCompletion {
             vm.reinitialiser()
             onFermer()
+            ensuite()
         }
     }
 
@@ -103,6 +110,7 @@ fun FeuilleExport(vm: ExportViewModel, onFermer: () -> Unit) {
         format = format,
         operation = operation,
         feuille = feuille,
+        importable = onImporter != null,
         actions = object : ActionsExport {
             override fun choisir(format: FormatExport) = vm.choisir(format)
 
@@ -129,6 +137,8 @@ fun FeuilleExport(vm: ExportViewModel, onFermer: () -> Unit) {
             }
 
             override fun fermer() = fermer()
+
+            override fun importer() = fermer { onImporter?.invoke() }
         },
     )
 }
@@ -142,6 +152,7 @@ fun VueExport(
     operation: OperationExport,
     actions: ActionsExport,
     feuille: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    importable: Boolean = false,
 ) {
     val pret = etat as? EtatExport.Pret
     FeuilleNocturne(onFermer = actions::fermer, etat = feuille, margeHorizontale = 16.dp, espacePoignee = 16.dp) {
@@ -160,7 +171,7 @@ fun VueExport(
         Titre("Format")
         Row(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CarteFormat("Texte", "Lisible, type bloc-notes", format == FormatExport.Texte, { actions.choisir(FormatExport.Texte) }, Modifier.weight(1f))
-            CarteFormat("CSV", "Pour un tableur", format == FormatExport.Csv, { actions.choisir(FormatExport.Csv) }, Modifier.weight(1f))
+            CarteFormat("CSV", "Pour un tableur, réimportable", format == FormatExport.Csv, { actions.choisir(FormatExport.Csv) }, Modifier.weight(1f))
         }
         // Aperçu : premières lignes, les lignes longues du CSV défilent horizontalement.
         Text(
@@ -202,7 +213,22 @@ fun VueExport(
             actif = actif,
         )
         operation.erreur?.let { MessageErreur(it, Modifier.padding(top = 10.dp)) }
-        Spacer(Modifier.height(12.dp))
+        if (importable) {
+            // Import (DECISIONS.md) : seul le CSV se réimporte.
+            BoutonTexte(
+                texte = "Importer un fichier CSV…",
+                onClick = actions::importer,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .offset(x = (-12).dp),
+                icone = R.drawable.ic_file_text,
+                couleur = Couleurs.Accent300,
+                tailleIcone = 18.dp,
+                margeHorizontale = 12.dp,
+            )
+        } else {
+            Spacer(Modifier.height(12.dp))
+        }
     }
 }
 

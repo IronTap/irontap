@@ -1,6 +1,6 @@
 # Publier une version
 
-Une seule clé signe tous les APK publiés (versions GitHub et F-Droid). F-Droid recompile chaque version depuis son tag, vérifie que le résultat est identique à l'APK publié sur GitHub (build reproductible), puis distribue cet APK signé. Changer de clé obligerait les utilisateurs à désinstaller, et IronTap n'a pas d'import : leur historique serait perdu.
+Une seule clé signe tous les APK publiés (versions GitHub et F-Droid). F-Droid recompile chaque version depuis son tag, vérifie que le résultat est identique à l'APK publié sur GitHub (build reproductible), puis distribue cet APK signé. Changer de clé obligerait les utilisateurs à désinstaller : ils ne retrouveraient leur historique qu'en l'exportant en CSV avant, puis en l'important.
 
 ## Une fois : la clé de signature
 Créée le 2026-10-23 dans `~/cles-android/irontap.jks` (hors dépôt), avec :

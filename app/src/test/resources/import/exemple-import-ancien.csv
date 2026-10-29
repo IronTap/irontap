@@ -1,0 +1,9 @@
+﻿date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions
+2026-09-16;Test import · ancien format;Développé couché;1;1;1;60;10
+2026-09-16;Test import · ancien format;Développé couché;1;2;1;60;8
+2026-09-16;Test import · ancien format;Écarté poulie;2;1;1;15;12
+2026-09-16;Test import · ancien format;Écarté poulie;2;2;1;15;10
+2026-09-16;Test import · ancien format;Écarté poulie;2;3;1;12.5;12
+2026-09-16;Test import · ancien format;Dips;3;1;1;;10
+2026-09-16;Test import · ancien format;Dips;3;3;1;;8
+2026-09-16;Test import · ancien format;Pompes;4;1;1;;20

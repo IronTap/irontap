@@ -22,13 +22,13 @@ Décisions prises avant le démarrage du développement (13 oct. 2026). La spéc
 | Dates | `java.time`, locale `fr` (« Lun. 12 oct. 2026 ») |
 | Police | Inter, fichiers TTF embarqués dans `res/font` (pas de polices téléchargeables, elles passent par le réseau) |
 | Icônes | Phosphor, exportées en vector drawables (29 icônes, aucune dépendance ; flèche des dégressives et lien des supersets en deux épaisseurs comme les maquettes ; haltère en deux variantes, générées par `outils/generer_icones.py` depuis la géométrie des maquettes) |
-| Export | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` ; texte et CSV générés à la main |
+| Export, import | `ACTION_SEND` + `FileProvider`, `ActivityResultContracts.CreateDocument` / `OpenDocument` ; texte et CSV générés et lus à la main |
 | Build | Gradle Kotlin DSL + version catalog |
-| Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, autocomplétion sans accents) + Room en mémoire |
+| Tests | JUnit sur la logique pure (validation, arrondi 0,25, calcul du chrono, export, import, autocomplétion sans accents) + Room en mémoire ; fichiers CSV d'exemple dans `app/src/test/resources/import/` |
 
 ## Identité et compatibilité
 
-- `applicationId` : **`fr.irontap`**, tiré du domaine `irontap.fr` (recommandation d'F-Droid). Définitif après la première diffusion : en changer créerait une autre appli, et l'historique serait perdu faute d'import. Le `namespace` (paquets Kotlin) reste `app.irontap`.
+- `applicationId` : **`fr.irontap`**, tiré du domaine `irontap.fr` (recommandation d'F-Droid). Définitif après la première diffusion : en changer créerait une autre appli, dont l'historique ne se retrouverait que par un export CSV puis un import. Le `namespace` (paquets Kotlin) reste `app.irontap`.
 - `minSdk 26` (Android 8), `targetSdk 36`.
 - Pas de permission `INTERNET` : garantit qu'aucun appel réseau n'est possible.
 - Seule permission demandée : `POST_NOTIFICATIONS` (Android 13+, précédée de l'écran 9).
@@ -136,6 +136,24 @@ Spec §6, avec ces précisions :
 - **Enregistrer le fichier** : sélecteur de document système (`CreateDocument`), nom proposé `irontap-2026-10-12.txt` (un entraînement) ou `irontap-historique-2026-10-14.csv` (tout l'historique, date du jour). Le document choisi est écrit en mode « wt » (contenu remplacé).
 - Après un partage ou un enregistrement réussi, la feuille se referme (enregistrement : toast système « Fichier enregistré », l'accueil et le détail n'ont pas de toast Nocturne). Un échec s'affiche dans la feuille, qui reste ouverte. La feuille rouverte repart du format Texte.
 - Aperçu : les 5 premières lignes en chasse fixe (police monospace du système) ; les lignes longues du CSV défilent horizontalement.
+- Carte CSV : « Pour un tableur, réimportable » (seul le CSV s'importe).
+
+## Import
+
+Hors spec (§1 et §5 : « pas d'import en V1 »), demande de l'utilisateur : sans import, toute perte de données (changement de téléphone sous Android 8 à 11, réinstallation, changement de clé) était définitive.
+
+- **CSV seul** : complet et sans ambiguïté ; le texte reste pour la lecture. Un export texte choisi par erreur est refusé avec « Seul le format CSV s'importe : exporte de nouveau en choisissant CSV. »
+- **Points d'entrée** : « Importer un export CSV » sous l'invitation de l'état vide de l'accueil (1b, le cas du nouveau téléphone, où Exporter est grisé), et « Importer un fichier CSV… » en bas de la feuille Exporter de l'accueil (pas dans celle du détail) : la feuille se referme, puis le sélecteur s'ouvre. Cas non couvert : historique vide avec un entraînement en cours (ni état vide, ni Exporter) ; il suffit de le terminer.
+- **Sélecteur de document système** (`OpenDocument`, types `text/*`, `application/csv`, `application/vnd.ms-excel`, `application/octet-stream` : chaque appli annonce un CSV à sa façon). Aucune permission, toujours pas d'`INTERNET`. Fichier lu en UTF-8, ou en Windows-1252 s'il n'est pas de l'UTF-8 valide (CSV réenregistré par Excel) ; 20 Mo au plus.
+- **Lecture** (`lireExportCsv`), tolérante sur la forme : marque d'ordre d'octets facultative, séparateur `;` ou `,` (celui de l'en-tête), guillemets RFC 4180 (`;`, `""`, saut de ligne), CRLF ou LF, colonnes repérées par leur nom, lignes vides ignorées, poids au point ou à la virgule arrondi au 0,25 kg comme à la saisie (vide ou nul : poids du corps). L'apostrophe ajoutée par l'export est retirée quand elle précède une formule (`=`, `+`, `-`, `@`, tabulation, retour chariot) ou une autre apostrophe.
+- **Entraînements** : regroupés par la colonne `entrainement`. Sans elle (anciens exports), une ligne commence un nouvel entraînement quand la date ou le libellé change, ou quand elle ne suit pas la précédente (exercice, série, palier croissants, même nom pour un même exercice) : deux séances du même jour au même libellé restent séparées dans l'ordre de l'export.
+- **Supersets reconstruits** : les deux exercices d'un même `superset` reçoivent un nouvel identifiant commun et leur rôle ; les numéros de série gardent les tours, sauts compris (tours vides retirés). A doit être immédiatement suivi de B. Un exercice seul de son superset redevient ordinaire, comme dans l'appli. Anciens exports (sans ces colonnes) : A et B reviennent en deux exercices ordinaires, séries renumérotées 1, 2…
+- **Exercices, séries, paliers** renumérotés 1, 2… dans leur ordre ; un même palier en double est une erreur.
+- **Doublons** : un entraînement identique à un entraînement de l'historique (date, libellé, exercices, séries, paliers, supersets) est ignoré, un pour un ; réimporter le même fichier n'ajoute rien. Un entraînement du même jour au contenu différent est importé.
+- **Tout ou rien** : le fichier est vérifié en entier avant toute écriture ; la moindre erreur le refuse, dialogue « Import impossible », « Rien n'a été importé. », les 5 premières erreurs avec leur ligne (« Ligne 14 : répétitions manquantes ») puis « … et 3 autres erreurs. », « OK ». L'ajout se fait en une transaction (doublons de nouveau écartés : l'historique a pu changer).
+- **Confirmation** (style 4b) : « Importer 12 entraînements ? », « Du 12 sept. au 26 oct. 2026. 3 déjà présents seront ignorés. », « Annuler » / « Importer » ; rien de nouveau : « Rien à importer », « Les 15 entraînements du fichier sont déjà dans l'historique. », « OK ». Après l'import, toast système « 12 entraînements importés » (l'accueil n'a pas de toast Nocturne).
+- **Entraînements ajoutés** : terminés à l'instant de l'import ; `cree_le` décroissant dans l'ordre du fichier, pour que deux séances du même jour gardent leur ordre à l'accueil. L'entraînement en cours n'est pas touché.
+- Pas de migration de base.
 
 ## Environnement de développement
 

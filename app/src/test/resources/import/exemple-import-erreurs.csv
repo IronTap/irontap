@@ -1,0 +1,7 @@
+﻿date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset
+2026-09-14;Test import · erreurs;Squat;1;1;1;100;5;1;;
+2026-09-14;Test import · erreurs;Squat;1;2;1;100;;1;;
+14/09/2026;Test import · erreurs;Squat;1;3;1;100;5;1;;
+2026-09-14;Test import · erreurs;Fentes;2;1;1;vingt;10;1;;
+2026-09-14;Test import · erreurs;Fentes;2;1;1;20;10;1;;
+2026-09-14;Test import · erreurs;Fentes;2;1;1;20;8;1;;

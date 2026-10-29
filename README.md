@@ -11,7 +11,7 @@ Site : https://irontap.fr/
 - Historique de l'exercice en un appui, depuis la saisie.
 - Séries dégressives et supersets.
 - Modification et suppression des séries et des entraînements.
-- Export en texte ou en CSV.
+- Export en texte ou en CSV, import d'un export CSV pour restaurer l'historique.
 
 ## Vie privée
 - L'application ne déclare pas la permission `INTERNET` : elle ne peut rien envoyer ni recevoir.

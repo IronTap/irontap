@@ -3,6 +3,7 @@ package app.irontap.ui.accueil
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onRoot
 import app.irontap.donnees.Entrainement
@@ -11,6 +12,12 @@ import app.irontap.donnees.EtatChrono.Etat
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.serieDeTest
+import app.irontap.logique.EntrainementImporte
+import app.irontap.logique.ErreurImport
+import app.irontap.logique.LectureImport
+import app.irontap.logique.lireExportCsv
+import app.irontap.ui.importation.DialoguesImport
+import app.irontap.ui.importation.EtatImport
 import app.irontap.ui.saisie.EtatSaisie
 import app.irontap.ui.theme.IronTapTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
@@ -79,6 +86,7 @@ class AccueilCaptureTest {
     fun vide() {
         afficher(EtatAccueil.Pret(emptyList(), enCours = null))
         compose.onNode(hasContentDescription("À propos") and hasClickAction()).assertIsDisplayed()
+        compose.onNode(hasText("Importer un export CSV") and hasClickAction()).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
     }
 
@@ -87,6 +95,39 @@ class AccueilCaptureTest {
         afficher(EtatAccueil.Pret(historique, enCours))
         compose.onNode(hasContentDescription("À propos") and hasClickAction()).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
+    }
+
+    private fun dialogueImport(etat: EtatImport) {
+        compose.setContent {
+            IronTapTheme {
+                ContenuAccueil(EtatAccueil.Pret(historique, enCours = null), realtime = { 72_000 }, onExporter = {}, actions = SansAction)
+                DialoguesImport(etat, onConfirmer = {}, onFermer = {})
+            }
+        }
+        compose.waitForIdle()
+        captureScreenRoboImage()
+    }
+
+    @Test
+    fun importConfirmation() {
+        val seance = EntrainementImporte(LocalDate.of(2026, 9, 12), null, emptyList())
+        dialogueImport(EtatImport.Confirmation(List(12) { seance.copy(date = seance.date.plusDays(it * 4L)) }, dejaPresents = 3))
+        compose.onNode(hasText("Importer 12 entraînements ?")).assertIsDisplayed()
+        compose.onNode(hasText("Du 12 sept. au 26 oct. 2026. 3 déjà présents seront ignorés.")).assertIsDisplayed()
+    }
+
+    @Test
+    fun importErreurs() {
+        val erreurs = (lireExportCsv(checkNotNull(javaClass.getResource("/import/exemple-import-erreurs.csv")).readText()) as LectureImport.Erreurs).erreurs
+        dialogueImport(EtatImport.Echec(erreurs + listOf(ErreurImport(9, "date manquante"), ErreurImport(11, "nom d’exercice manquant"), ErreurImport(12, "répétitions manquantes"))))
+        compose.onNode(hasText("Ligne 3 : répétitions manquantes")).assertIsDisplayed()
+        compose.onNode(hasText("… et 2 autres erreurs.")).assertIsDisplayed()
+    }
+
+    @Test
+    fun importRien() {
+        dialogueImport(EtatImport.RienAImporter(15))
+        compose.onNode(hasText("Les 15 entraînements du fichier sont déjà dans l’historique.")).assertIsDisplayed()
     }
 
     @Test

@@ -1,5 +1,8 @@
 package app.irontap.ui.accueil
 
+import android.content.ActivityNotFoundException
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -66,6 +70,8 @@ import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.tempsEcouleMs
 import app.irontap.ui.export.ExportViewModel
 import app.irontap.ui.export.FeuilleExport
+import app.irontap.ui.importation.DialoguesImport
+import app.irontap.ui.importation.ImportViewModel
 import app.irontap.ui.saisie.EtatSaisie
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Formes
@@ -102,10 +108,22 @@ fun EcranAccueil(actions: ActionsAccueil, vm: AccueilViewModel = viewModel(facto
     var confirmer by rememberSaveable { mutableStateOf<Long?>(null) }
     var exporter by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Import d'un export CSV (DECISIONS.md) : sélecteur de document système, aucune permission.
+    val importVm: ImportViewModel = viewModel(factory = ImportViewModel.Fabrique)
+    val etatImport by importVm.etat.collectAsStateWithLifecycle()
+    val choisirFichier = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(importVm::analyser) }
+    val importer = {
+        try {
+            choisirFichier.launch(ImportViewModel.TypesFichier)
+        } catch (e: ActivityNotFoundException) {
+            importVm.signaler("Aucune appli ne permet de choisir un fichier.")
+        }
+    }
     ContenuAccueil(
         etat = pret,
         realtime = vm::realtime,
         onExporter = { exporter = true },
+        onImporter = importer,
         actions = object : ActionsAccueil by actions {
             // Un seul entraînement en cours à la fois (spec §4.1) : on propose d'abord de terminer l'autre.
             override fun nouvelEntrainement() {
@@ -129,11 +147,20 @@ fun EcranAccueil(actions: ActionsAccueil, vm: AccueilViewModel = viewModel(facto
         )
     }
     // Tout l'historique (spec §5).
-    if (exporter) FeuilleExport(vm = viewModel(factory = ExportViewModel.fabrique(id = null)), onFermer = { exporter = false })
+    if (exporter) {
+        FeuilleExport(vm = viewModel(factory = ExportViewModel.fabrique(id = null)), onFermer = { exporter = false }, onImporter = importer)
+    }
+    DialoguesImport(etatImport, onConfirmer = importVm::confirmer, onFermer = importVm::fermer)
 }
 
 @Composable
-fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, onExporter: () -> Unit, actions: ActionsAccueil) {
+fun ContenuAccueil(
+    etat: EtatAccueil.Pret,
+    realtime: () -> Long,
+    onExporter: () -> Unit,
+    actions: ActionsAccueil,
+    onImporter: () -> Unit = {},
+) {
     val vide = etat.historique.isEmpty() && etat.enCours == null
     Column(
         Modifier
@@ -147,7 +174,7 @@ fun ContenuAccueil(etat: EtatAccueil.Pret, realtime: () -> Long, onExporter: () 
             val basBouton = HauteurDegrade + (if (etat.enCours != null) 56.dp else 64.dp) +
                 WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
             if (vide) {
-                EtatVide(Modifier.align(Alignment.BottomStart).padding(bottom = basBouton - HauteurDegrade + 40.dp))
+                EtatVide(onImporter, Modifier.align(Alignment.BottomStart).padding(bottom = basBouton - HauteurDegrade + 40.dp))
             } else {
                 Liste(etat, realtime, actions, PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = basBouton))
             }
@@ -296,9 +323,12 @@ private fun degradeCss(angle: Float, debut: Color, fin: Color) = object : Shader
     }
 }
 
-/** 1b : haltère accent 40 dp, « Aucun entraînement » 22 / 500, invitation en 15 neutre-400, calés en bas. */
+/**
+ * 1b : haltère accent 40 dp, « Aucun entraînement » 22 / 500, invitation en 15 neutre-400, calés en bas. Puis
+ * « Importer un export CSV » (DECISIONS.md), pour retrouver son historique sur un nouveau téléphone.
+ */
 @Composable
-private fun EtatVide(modifier: Modifier) {
+private fun EtatVide(onImporter: () -> Unit, modifier: Modifier) {
     Column(modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Icone(R.drawable.ic_barbell, taille = 40.dp, couleur = Couleurs.Accent)
         Text("Aucun entraînement", style = Typo.GrandTitre, color = Couleurs.Texte, modifier = Modifier.padding(top = 8.dp))
@@ -306,6 +336,15 @@ private fun EtatVide(modifier: Modifier) {
             text = "Lance ta première séance : tes exercices, poids et répétitions apparaîtront ici.",
             style = Typo.CorpsDialogue,
             color = Couleurs.Neutre400,
+        )
+        // Texte aligné sur celui du dessus, zone d'appui de 48 dp.
+        BoutonTexte(
+            texte = "Importer un export CSV",
+            onClick = onImporter,
+            modifier = Modifier.offset(x = (-12).dp),
+            icone = R.drawable.ic_file_text,
+            tailleIcone = 18.dp,
+            margeHorizontale = 12.dp,
         )
     }
 }

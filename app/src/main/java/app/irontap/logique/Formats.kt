@@ -26,3 +26,14 @@ fun formaterDateCourte(date: LocalDate): String =
 
 /** « 12/10/2026 » (historique de l'exercice, 3g). */
 fun formaterDateNumerique(date: LocalDate): String = FormatDateNumerique.format(date)
+
+private val FormatJourMois = DateTimeFormatter.ofPattern("d MMM", Locale.FRENCH)
+
+private val FormatJourMoisAnnee = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.FRENCH)
+
+/** « Le 12 oct. 2026 », « Du 12 sept. au 26 oct. 2026 », « Du 28 déc. 2025 au 3 janv. 2026 » (confirmation de l'import). */
+fun formaterPeriode(debut: LocalDate, fin: LocalDate): String = when {
+    debut == fin -> "Le ${FormatJourMoisAnnee.format(fin)}"
+    debut.year == fin.year -> "Du ${FormatJourMois.format(debut)} au ${FormatJourMoisAnnee.format(fin)}"
+    else -> "Du ${FormatJourMoisAnnee.format(debut)} au ${FormatJourMoisAnnee.format(fin)}"
+}

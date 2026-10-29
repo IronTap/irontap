@@ -5,11 +5,15 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import app.irontap.logique.EntrainementImporte
+import app.irontap.logique.ecarterDoublons
 import app.irontap.logique.normaliserNom
+import app.irontap.logique.versImport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.time.LocalDate
+import java.util.UUID
 
 /**
  * Accès aux données. Les opérations qui touchent plusieurs lignes portent les règles de la spec
@@ -443,6 +447,41 @@ abstract class EntrainementDao {
         return numero
     }
 
+    // --- Import (DECISIONS.md) ---
+
+    /** Tout l'historique terminé, lu en une transaction (doublons de l'import). */
+    suspend fun lireHistoriqueComplet(): List<EntrainementComplet> = lireHistoriqueCompletBrut().map { it.trie() }
+
+    /**
+     * Ajoute à l'historique les [entrainements] importés, sauf ceux déjà présents (cf. [ecarterDoublons]), tout ou
+     * rien. Ils sont terminés à [maintenant] ; entre eux, l'accueil garde l'ordre du fichier pour un même jour. Les
+     * deux exercices d'un superset reçoivent un nouvel identifiant commun, leurs séries le numéro de leur tour.
+     * L'entraînement en cours n'est pas touché. Retourne le nombre d'entraînements ajoutés.
+     */
+    @Transaction
+    open suspend fun importer(entrainements: List<EntrainementImporte>, maintenant: Instant): Int {
+        val (nouveaux, _) = ecarterDoublons(entrainements, lireHistoriqueComplet().map { it.versImport() })
+        nouveaux.forEachIndexed { index, importe ->
+            // Accueil : même date, le plus récemment créé d'abord ; le fichier va du plus récent au plus ancien.
+            val creeLe = maintenant.minusMillis(index.toLong())
+            val id = inserer(Entrainement(date = importe.date, libelle = importe.libelle.nettoye(), creeLe = creeLe, termineLe = maintenant))
+            val supersets = importe.exercices.mapNotNull { it.superset }.distinct().associateWith { UUID.randomUUID().toString() }
+            importe.exercices.forEachIndexed { ordre, exercice ->
+                val exerciceId = inserer(
+                    Exercice(
+                        entrainementId = id,
+                        nom = exercice.nom,
+                        ordre = ordre + 1,
+                        supersetId = exercice.superset?.let { supersets.getValue(it) },
+                        supersetRole = exercice.role,
+                    ),
+                )
+                exercice.series.forEach { ajouterSerie(exerciceId, it.paliers, creeLe, ordre = it.ordre) }
+            }
+        }
+        return nouveaux.size
+    }
+
     /** Applique une action du chrono (Play, Pause, Relancer) à l'état enregistré. */
     @Transaction
     open suspend fun modifierChrono(entrainementId: Long, action: (EtatChrono) -> EtatChrono): EtatChrono? {
@@ -547,6 +586,10 @@ abstract class EntrainementDao {
     @Transaction
     @Query("SELECT * FROM entrainement WHERE termine_le IS NOT NULL ORDER BY date DESC, cree_le DESC")
     protected abstract fun observerHistoriqueCompletBrut(): Flow<List<EntrainementComplet>>
+
+    @Transaction
+    @Query("SELECT * FROM entrainement WHERE termine_le IS NOT NULL ORDER BY date DESC, cree_le DESC")
+    protected abstract suspend fun lireHistoriqueCompletBrut(): List<EntrainementComplet>
 
     @Query("SELECT * FROM entrainement WHERE id = :id")
     protected abstract suspend fun lire(id: Long): Entrainement?

@@ -57,6 +57,7 @@ class ExportCaptureTest {
         override fun partager() = Unit
         override fun enregistrer() = Unit
         override fun fermer() = Unit
+        override fun importer() = Unit
         override fun aPropos() = Unit
         override fun nouvelEntrainement() = Unit
         override fun reprendre() = Unit
@@ -66,7 +67,8 @@ class ExportCaptureTest {
     private fun afficher(format: FormatExport, operation: OperationExport = OperationExport()) = compose.setContent {
         IronTapTheme {
             ContenuAccueil(EtatAccueil.Pret(listOf(dos.entrainement), enCours = null), realtime = { 0 }, onExporter = {}, actions = SansAction)
-            VueExport(pret, format, operation, SansAction)
+            // Depuis l'accueil : lien d'import en bas.
+            VueExport(pret, format, operation, SansAction, importable = true)
         }
     }
 
