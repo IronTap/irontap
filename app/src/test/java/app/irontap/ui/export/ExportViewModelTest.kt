@@ -112,9 +112,9 @@ class ExportViewModelTest {
         val pret = vm.pret()
         assertEquals("Lun. 12 oct. 2026 · Dos / biceps", pret.portee)
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;12.5;12\r\n",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;12.5;12;1;;\r\n",
             pret.contenus.getValue(FormatExport.Csv),
         )
         vm.choisir(FormatExport.Csv)
@@ -176,9 +176,9 @@ class ExportViewModelTest {
         assertFalse("Double appui", vm.reserver())
         assertTrue(hors { vm.enregistrer(Uri.fromFile(document)) })
         assertEquals(
-            "\uFEFFdate;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;12.5;12\r\n",
+            "\uFEFFdate;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;12.5;12;1;;\r\n",
             document.readText(),
         )
         assertEquals(OperationExport(occupe = true), vm.operation.value)
