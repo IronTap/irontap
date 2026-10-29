@@ -68,7 +68,7 @@ interface ActionsEdition {
     fun fermer()
 }
 
-private val AjoutsPoids = listOf(1, 5, 10, 20)
+private val AjoutsPoids = listOf(1, 2, 5, 10, 20)
 private val AjoutsRepetitions = listOf(1, 2, 5, 10)
 
 /**

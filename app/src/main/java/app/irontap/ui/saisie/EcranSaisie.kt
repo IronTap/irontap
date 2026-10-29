@@ -147,7 +147,7 @@ interface ActionsSaisie {
 /** Onglets d'un superset à l'écran : l'onglet actif et le nom saisi dans chaque onglet (libellé de l'inactif). */
 data class OngletsSuperset(val actif: RoleSuperset, val nomsSaisis: Map<RoleSuperset, String>)
 
-private val AjoutsPoids = listOf(1, 5, 10, 20)
+private val AjoutsPoids = listOf(1, 2, 5, 10, 20)
 private val AjoutsRepetitions = listOf(1, 2, 5, 10)
 
 /** Hauteur du bloc d'actions du bas (72 + 8 + 48) : le toast s'affiche juste au-dessus. */

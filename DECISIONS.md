@@ -97,6 +97,7 @@ Spec §6, avec ces précisions :
   - Autocomplétion sur l'onglet actif modifiable : la liste s'affiche sous les deux onglets, sur toute leur largeur.
   - Ligne de la notification et du bandeau de l'accueil : « Élévations latérales + Curl marteau · Série 2 ».
   - Pastilles de 36 dp comme la maquette, dans une zone tactile de 48 dp.
+- **Ajout rapide du poids** (hors spec, demande de l'utilisateur) : +1, +2, +5, +10, +20 (spec §4.3.1 : sans +2), sur l'écran de saisie et dans la feuille d'édition (écran 7). Cinq ronds de 58 dp répartis sur la largeur : sur 360 dp, 9,5 dp entre deux cibles (vérifié par les captures). Les répétitions gardent +1, +2, +5, +10.
 - **« Nouvel exercice » sans rien de saisi** (hors spec, demande de l'utilisateur) : un appui par erreur sur « Nouvelle série » verrouillait le nom avec des champs vides, et « Nouvel exercice » exigeait alors des répétitions.
   - Nom verrouillé, ni poids, ni répétitions, ni palier gardé : dialogue au style de 4b, « Passer à l'exercice suivant ? », « Les champs sont vides : la série 4 ne sera pas enregistrée. Tirage vertical garde ses 3 séries. », « Annuler » / « Nouvel exercice ». Confirmé, l'exercice suivant s'ouvre (nom modifiable) sans rien enregistrer : pas de toast, chrono inchangé (aucune série enregistrée).
   - Un champ rempli, ou un palier gardé : validation normale. Nom encore modifiable : rien à passer, erreurs habituelles.

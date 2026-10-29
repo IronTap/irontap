@@ -22,6 +22,7 @@ import app.irontap.donnees.ValeursPalier
 import app.irontap.donnees.RoleSuperset
 import app.irontap.donnees.serieDeTest
 import app.irontap.logique.Suggestion
+import app.irontap.ui.verifierAjoutsPoids
 import app.irontap.ui.theme.IronTapTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -149,6 +150,7 @@ class DetailCaptureTest {
             )
         }
         compose.waitForIdle()
+        compose.verifierAjoutsPoids(listOf("+1", "+2", "+5", "+10", "+20"), largeur = 360f)
         captureScreenRoboImage()
     }
 

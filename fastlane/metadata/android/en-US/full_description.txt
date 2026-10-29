@@ -5,7 +5,7 @@
 <p><b>Features</b></p>
 <ul>
 <li>Rest timer that restarts after each set and stays visible in a notification</li>
-<li>Quick add: +1, +5, +10, +20 on weight and reps, decimals accepted (1.25 kg)</li>
+<li>Quick add: +1, +2, +5, +10, +20 on weight and +1, +2, +5, +10 on reps, decimals accepted (1.25 kg)</li>
 <li>Exercise name autocompletion, accent-insensitive</li>
 <li>Exercise history in one tap, without leaving the entry screen</li>
 <li>Drop sets: as many steps as you want within a single set</li>

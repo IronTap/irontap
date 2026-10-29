@@ -3,7 +3,7 @@
 <p><b>Fonctionnalités</b></p>
 <ul>
 <li>Chronomètre de repos qui repart après chaque série et reste visible dans une notification</li>
-<li>Ajout rapide : +1, +5, +10, +20 sur le poids et les répétitions, décimales acceptées (1,25 kg)</li>
+<li>Ajout rapide : +1, +2, +5, +10, +20 sur le poids, +1, +2, +5, +10 sur les répétitions, décimales acceptées (1,25 kg)</li>
 <li>Autocomplétion des exercices, avec ou sans accents</li>
 <li>Historique de l’exercice en un appui, sans quitter la saisie</li>
 <li>Séries dégressives : autant de paliers que tu veux dans une même série</li>

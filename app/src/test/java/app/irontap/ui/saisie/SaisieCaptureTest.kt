@@ -38,6 +38,7 @@ import app.irontap.logique.HistoriqueExercice
 import app.irontap.logique.LigneHistorique
 import app.irontap.logique.SeanceHistorique
 import app.irontap.logique.Suggestion
+import app.irontap.ui.verifierAjoutsPoids
 import app.irontap.ui.theme.IronTapTheme
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -133,6 +134,8 @@ class SaisieCaptureTest {
     fun premierExercice() {
         afficher()
         compose.onNode(hasContentDescription("Historique de l’exercice")).assertDoesNotExist()
+        // Cinq boutons de poids sur 360 dp.
+        compose.verifierAjoutsPoids(listOf("+1", "+2", "+5", "+10", "+20"), largeur = 360f)
         compose.onRoot().captureRoboImage()
     }
 

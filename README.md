@@ -6,7 +6,7 @@ Site : https://irontap.fr/
 
 ## Fonctionnalités
 - Chronomètre de repos qui repart après chaque série et reste visible dans une notification.
-- Ajout rapide (+1, +5, +10, +20) sur le poids et les répétitions, décimales acceptées.
+- Ajout rapide : +1, +2, +5, +10, +20 sur le poids, +1, +2, +5, +10 sur les répétitions, décimales acceptées.
 - Autocomplétion des exercices, avec ou sans accents.
 - Historique de l'exercice en un appui, depuis la saisie.
 - Séries dégressives et supersets.
