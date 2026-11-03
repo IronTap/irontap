@@ -1,4 +1,5 @@
-"""Génère les vector drawables Phosphor d'IronTap à partir de la géométrie SVG des maquettes (viewBox 256)."""
+"""Génère les vector drawables d'IronTap : icônes Phosphor (géométrie SVG des maquettes, viewBox 256), et icône du
+lanceur, logo et icône de notification tirés du symbole IronTap (irontap-symbol.svg, à la racine du dépôt)."""
 # Usage : python3 outils/generer_icones.py app/src/main/res/drawable
 import re, sys, os
 
@@ -38,12 +39,11 @@ ICONS = {
     # Superset : trait 20 à 14 dp (pastille, feuille), 24 aux petites tailles (11–12 dp), comme les maquettes.
     'link_simple': ('<path d="M141.5 165.4l-21.9 21.9a44 44 0 0 1-62.2-62.2l21.9-21.9"/><path d="M114.5 90.6l21.9-21.9a44 44 0 0 1 62.2 62.2l-21.9 21.9"/><line x1="100" y1="156" x2="156" y2="100"/>', 20),
     'link_simple_small': ('<path d="M141.5 165.4l-21.9 21.9a44 44 0 0 1-62.2-62.2l21.9-21.9"/><path d="M114.5 90.6l21.9-21.9a44 44 0 0 1 62.2 62.2l-21.9 21.9"/><line x1="100" y1="156" x2="156" y2="100"/>', 24),
-    # À propos (10a) : info de l'accueil, lignes de la carte, et logo de l'appli (haltère simplifiée de la maquette).
+    # À propos (10a) : info de l'accueil et lignes de la carte.
     'info': ('<circle cx="128" cy="128" r="96"/><line x1="128" y1="120" x2="128" y2="176"/><line x1="128" y1="84" x2="128" y2="86"/>', 16),
     'code': ('<polyline points="64 88 16 128 64 168"/><polyline points="192 88 240 128 192 168"/><line x1="160" y1="40" x2="96" y2="216"/>', 16),
     'file_text': ('<path d="M200 224H56a8 8 0 0 1-8-8V40a8 8 0 0 1 8-8h96l56 56v128a8 8 0 0 1-8 8Z"/><polyline points="152 32 152 88 208 88"/><line x1="96" y1="136" x2="160" y2="136"/><line x1="96" y1="168" x2="160" y2="168"/>', 16),
     'arrow_square_out': ('<polyline points="216 100 216 40 156 40"/><line x1="144" y1="112" x2="216" y2="40"/><path d="M184 144v64a8 8 0 0 1-8 8H48a8 8 0 0 1-8-8V80a8 8 0 0 1 8-8h64"/>', 18),
-    'barbell_logo': ('<rect x="56" y="56" width="40" height="144" rx="8"/><rect x="160" y="56" width="40" height="144" rx="8"/><line x1="96" y1="128" x2="160" y2="128"/><path d="M200 80h24v96h-24"/><path d="M56 176H32V80h24"/>', 18),
     'lock': ('<rect x="40" y="88" width="176" height="128" rx="8"/><path d="M92 88V52a36 36 0 0 1 72 0v36"/>', 16),
     'flag': ('<line x1="48" y1="224" x2="48" y2="48"/><path d="M48 168c64-56 96 56 160 0V48c-64 56-96-56-160 0"/>', 16),
     'calendar': ('<rect x="40" y="40" width="176" height="176" rx="8"/><line x1="176" y1="24" x2="176" y2="56"/><line x1="80" y1="24" x2="80" y2="56"/><line x1="40" y1="88" x2="216" y2="88"/>', 16),
@@ -55,9 +55,8 @@ ICONS = {
     'bell': ('<path d="M56 104a72 72 0 0 1 144 0c0 35.8 8.2 64.5 14.8 76A8 8 0 0 1 208 192H48a8 8 0 0 1-6.9-12C47.8 168.5 56 139.8 56 104Z"/><path d="M96 192a32 32 0 0 0 64 0"/>', 16),
     'check': ('<polyline points="40 144 96 200 224 72"/>', 20),
     'warning_circle': ('<circle cx="128" cy="128" r="96"/><line x1="128" y1="80" x2="128" y2="136"/><line x1="128" y1="172" x2="128" y2="174"/>', 18),
-    # Haltère complet (état vide, 40 dp) et version compacte sans disques extérieurs (petites tailles, notification).
+    # Haltère complet (état vide de l'accueil, 40 dp).
     'barbell': ('<rect x="56" y="56" width="40" height="144" rx="8"/><rect x="160" y="56" width="40" height="144" rx="8"/><line x1="96" y1="128" x2="160" y2="128"/><path d="M200 80h24a8 8 0 0 1 8 8v80a8 8 0 0 1-8 8h-24"/><path d="M56 176H32a8 8 0 0 1-8-8V88a8 8 0 0 1 8-8h24"/>', 12),
-    'barbell_compact': ('<rect x="56" y="56" width="40" height="144" rx="8"/><rect x="160" y="56" width="40" height="144" rx="8"/><line x1="96" y1="128" x2="160" y2="128"/>', 20),
 }
 
 def drawable(path, sw):
@@ -81,27 +80,42 @@ out = sys.argv[1]
 for name, (svg, sw) in ICONS.items():
     open(os.path.join(out, f'ic_{name}.xml'), 'w').write(drawable(to_path(svg), sw))
 
-# Icône du lanceur : haltère complet en accent, ramené dans la zone sûre (66 dp centrés sur 108).
-barbell = to_path(ICONS['barbell'][0])
-open(os.path.join(out, 'ic_launcher_foreground.xml'), 'w').write(f'''<?xml version="1.0" encoding="utf-8"?>
-<!-- Haltère Phosphor (MIT) en accent, dans la zone sûre de l'icône adaptative. Généré par outils/generer_icones.py. -->
+# Symbole IronTap : un seul tracé plein (pair-impair), viewBox 512. Décalé de 1,5 en x : son point le plus à gauche
+# est à -0,85, son centre à (254,7 ; 255,6).
+symbole = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'irontap-symbol.svg')).read()
+trace = re.sub(r'\s*([MLZ])\s*', r'\1', re.search(r'\sd="([^"]+)"', symbole).group(1))
+teinte = '#FF' + re.search(r'fill="#([0-9a-fA-F]{6})"', symbole).group(1).upper()
+ENTETE = 'Symbole IronTap (irontap-symbol.svg), voir « Licence » dans le README. Généré par outils/generer_icones.py.'
+
+def symbole_xml(taille, viewport, echelle, decalage, couleur):
+    return f'''<?xml version="1.0" encoding="utf-8"?>
+<!-- {ENTETE} -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:width="{taille}dp"
+    android:height="{taille}dp"
+    android:viewportWidth="{viewport}"
+    android:viewportHeight="{viewport}">
     <group
-        android:scaleX="0.2578125"
-        android:scaleY="0.2578125"
-        android:translateX="21"
-        android:translateY="21">
+        android:scaleX="{echelle:g}"
+        android:scaleY="{echelle:g}"
+        android:translateX="{decalage[0]:g}"
+        android:translateY="{decalage[1]:g}">
         <path
-            android:strokeColor="@color/nocturne_accent"
-            android:strokeWidth="12"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round"
-            android:pathData="{barbell}" />
+            android:fillColor="{couleur}"
+            android:fillType="evenOdd"
+            android:pathData="{trace}" />
     </group>
 </vector>
-''')
-print(len(ICONS), 'icônes')
+'''
+
+# Logo de l'écran À propos (teinté en Compose), à la taille du tracé.
+open(os.path.join(out, 'ic_irontap_symbol.xml'), 'w').write(symbole_xml(24, 512, 1, (1.5, 0), '#FFFFFFFF'))
+# Notification : symbole de 20 dp dans les 24 dp de l'icône, comme les icônes système de la barre d'état.
+e = 20 / 512
+open(os.path.join(out, 'ic_notification.xml'), 'w').write(symbole_xml(24, 24, e, (2 + 1.5 * e, 2), '#FFFFFFFF'))
+# Lanceur : symbole de 54 dp de large, dans sa couleur, centré sur le canevas de 108 dp de l'icône adaptative (zone
+# visible 72 dp, zone sûre 66 dp), sur @color/nocturne_bg ; le même dessin sert de couche monochrome (Android 13).
+e = 54 / 511.14
+open(os.path.join(out, 'ic_launcher_foreground.xml'), 'w').write(
+    symbole_xml(108, 108, e, (54 - 254.72 * e, 54 - 255.58 * e), teinte))
+print(len(ICONS), 'icônes et 3 dérivées du symbole')

@@ -51,4 +51,4 @@ Composants tiers, avec leur propre licence (textes dans [`licences/`](licences/)
 
 Ces textes, et la liste des bibliothèques réellement embarquées, sont lisibles dans l'application : ⓘ de l'accueil, « À propos ».
 
-Le nom « IronTap » et son logo ne sont pas couverts par la licence : une version modifiée et redistribuée doit porter un autre nom et un autre logo.
+Le nom « IronTap » et son logo (le symbole [`irontap-symbol.svg`](irontap-symbol.svg) et les icônes qui en sont tirées) ne sont pas couverts par la licence : une version modifiée et redistribuée doit porter un autre nom et un autre logo.

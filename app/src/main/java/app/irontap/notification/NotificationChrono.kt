@@ -74,7 +74,7 @@ class NotificationChrono(
     internal fun construire(contenu: ContenuNotification): Notification {
         val ecouleMs = contenu.chrono.ecouleMs(horloge.realtime())
         return NotificationCompat.Builder(context, CANAL)
-            .setSmallIcon(R.drawable.ic_barbell_compact)
+            .setSmallIcon(R.drawable.ic_notification)
             .setColor(Couleurs.Accent.toArgb())
             .setSubText("Chrono de repos")
             .setContentTitle(if (contenu.enCours) "Repos en cours" else "${formaterChrono(ecouleMs)} · En pause")

@@ -4,12 +4,10 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -24,7 +22,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -151,7 +148,7 @@ internal fun EnTeteRetour(onRetour: () -> Unit, hauteur: Int = 64, titre: @Compo
     }
 }
 
-/** Icône de l'appli (60 dp, rayon 16, accent-900 bordé d'accent, haltère accent-300), nom et version. */
+/** Symbole IronTap (60 dp, accent-300, sa couleur d'origine), nom et version. */
 @Composable
 private fun BlocAppli(version: String) {
     Row(
@@ -159,14 +156,7 @@ private fun BlocAppli(version: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        val forme = RoundedCornerShape(16.dp)
-        Box(
-            Modifier
-                .size(60.dp)
-                .background(Couleurs.Accent900, forme)
-                .border(1.dp, Couleurs.Accent, forme),
-            contentAlignment = Alignment.Center,
-        ) { Icone(R.drawable.ic_barbell_logo, taille = 30.dp, couleur = Couleurs.Accent300) }
+        Icone(R.drawable.ic_irontap_symbol, taille = 60.dp, couleur = Couleurs.Accent300)
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("IronTap", style = Typo.GrandTitre, color = Couleurs.Texte)
             Text(version, style = Typo.Secondaire, color = Couleurs.Neutre400)
