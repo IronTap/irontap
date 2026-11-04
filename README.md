@@ -51,4 +51,4 @@ Composants tiers, avec leur propre licence (textes dans [`licences/`](licences/)
 
 Ces textes, et la liste des bibliothèques réellement embarquées, sont lisibles dans l'application : ⓘ de l'accueil, « À propos ».
 
-Le nom « IronTap » et son logo (le symbole [`irontap-symbol.svg`](irontap-symbol.svg) et les icônes qui en sont tirées) ne sont pas couverts par la licence : une version modifiée et redistribuée doit porter un autre nom et un autre logo.
+Le logo d'IronTap (le symbole [`irontap-symbol.svg`](irontap-symbol.svg) et les icônes qui en sont tirées) est distribué sous la même licence que le code. Le nom « IronTap » et ce logo restent toutefois réservés à cette application : en vertu de l'article 7 de la GPL (alinéas c et e), la licence n'accorde aucun droit de les utiliser comme marque, et une version modifiée et redistribuée doit porter un autre nom et un autre logo.

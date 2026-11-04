@@ -80,8 +80,9 @@ out = sys.argv[1]
 for name, (svg, sw) in ICONS.items():
     open(os.path.join(out, f'ic_{name}.xml'), 'w').write(drawable(to_path(svg), sw))
 
-# Symbole IronTap : un seul tracé plein (pair-impair), viewBox 512. Décalé de 1,5 en x : son point le plus à gauche
-# est à -0,85, son centre à (254,7 ; 255,6).
+# Symbole IronTap : un seul tracé plein (pair-impair, avec des arcs), viewBox 512. Anneau centré en (256, 256), de
+# 504 de diamètre : à mettre à jour ici et dans generer_logo.py si le symbole change.
+CX, CY, LARGEUR = 256, 256, 504
 symbole = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'irontap-symbol.svg')).read()
 trace = re.sub(r'\s*([MLZ])\s*', r'\1', re.search(r'\sd="([^"]+)"', symbole).group(1))
 teinte = '#FF' + re.search(r'fill="#([0-9a-fA-F]{6})"', symbole).group(1).upper()
@@ -109,13 +110,13 @@ def symbole_xml(taille, viewport, echelle, decalage, couleur):
 '''
 
 # Logo de l'écran À propos (teinté en Compose), à la taille du tracé.
-open(os.path.join(out, 'ic_irontap_symbol.xml'), 'w').write(symbole_xml(24, 512, 1, (1.5, 0), '#FFFFFFFF'))
+open(os.path.join(out, 'ic_irontap_symbol.xml'), 'w').write(symbole_xml(24, 512, 1, (256 - CX, 256 - CY), '#FFFFFFFF'))
 # Notification : symbole de 20 dp dans les 24 dp de l'icône, comme les icônes système de la barre d'état.
-e = 20 / 512
-open(os.path.join(out, 'ic_notification.xml'), 'w').write(symbole_xml(24, 24, e, (2 + 1.5 * e, 2), '#FFFFFFFF'))
+e = 20 / LARGEUR
+open(os.path.join(out, 'ic_notification.xml'), 'w').write(symbole_xml(24, 24, e, (12 - CX * e, 12 - CY * e), '#FFFFFFFF'))
 # Lanceur : symbole de 54 dp de large, dans sa couleur, centré sur le canevas de 108 dp de l'icône adaptative (zone
 # visible 72 dp, zone sûre 66 dp), sur @color/nocturne_bg ; le même dessin sert de couche monochrome (Android 13).
-e = 54 / 511.14
+e = 54 / LARGEUR
 open(os.path.join(out, 'ic_launcher_foreground.xml'), 'w').write(
-    symbole_xml(108, 108, e, (54 - 254.72 * e, 54 - 255.58 * e), teinte))
+    symbole_xml(108, 108, e, (54 - CX * e, 54 - CY * e), teinte))
 print(len(ICONS), 'icônes et 3 dérivées du symbole')

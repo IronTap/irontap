@@ -27,8 +27,8 @@ source = open(os.path.join(RACINE, 'irontap-symbol.svg')).read()
 trace = re.search(r'\sd="([^"]+)"', source).group(1)
 teinte = re.search(r'fill="(#[0-9a-fA-F]{6})"', source).group(1).lower()
 symbole = f'<path fill="{teinte}" fill-rule="evenodd" d="{trace}"/>'
-# Boîte du tracé : x de -0,85 à 510,29, y de 7,68 à 503,47 (le cercle est un peu plus large que haut).
-CX, CY, LARGEUR = 254.72, 255.58, 511.14
+# Anneau centré en (256, 256), de 504 de diamètre (mêmes valeurs dans generer_icones.py).
+CX, CY, LARGEUR = 256, 256, 504
 
 
 def icone(cote, rayon_coins):
@@ -57,8 +57,8 @@ with sync_playwright() as p:
     navigateur.close()
 
 if site:
-    # Disque elliptique sous l'anneau (rayons entre ceux du bord intérieur et du bord extérieur), viewBox recentré.
-    favicon = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.5 0 512 512">'
-               f'<ellipse cx="{CX}" cy="{CY}" rx="236" ry="230" fill="{FOND}"/>{symbole}</svg>\n')
+    # Disque sous l'anneau, de rayon compris entre ceux de ses bords intérieur (220) et extérieur (252).
+    favicon = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+               f'<circle cx="{CX}" cy="{CY}" r="236" fill="{FOND}"/>{symbole}</svg>\n')
     open(os.path.join(site, 'favicon.svg'), 'w').write(favicon)
     print(os.path.join(site, 'favicon.svg'))
