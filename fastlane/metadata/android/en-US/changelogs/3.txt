@@ -1,0 +1,1 @@
+New logo. A “to failure” checkbox next to reps flags a set taken to failure; the marker shows in the exercise history and the workout details, can be changed when editing a set, and is included in plain text and CSV exports.

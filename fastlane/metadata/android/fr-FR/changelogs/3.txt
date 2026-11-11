@@ -1,0 +1,1 @@
+Nouveau logo. Une case « à l’échec », à côté des répétitions, marque une série menée à l’échec ; le repère s’affiche dans l’historique de l’exercice et le détail de l’entraînement, se corrige dans les feuilles de modification et passe dans l’export texte et CSV.
