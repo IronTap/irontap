@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +43,7 @@ import app.irontap.donnees.SerieAvecPaliers
 import app.irontap.ui.composants.BoutonPrincipal
 import app.irontap.ui.composants.BoutonRond
 import app.irontap.ui.composants.BoutonTexte
+import app.irontap.ui.composants.CaseEchec
 import app.irontap.ui.composants.ChampPalier
 import app.irontap.ui.composants.ChampPoids
 import app.irontap.ui.composants.ChampRepetitions
@@ -60,6 +60,9 @@ interface ActionsEdition {
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
 
+    /** Case « à l'échec » de la série. */
+    fun basculerEchec()
+
     /** « + Ajouter un palier » : retourne la clé de la nouvelle ligne, qui prend le focus. */
     fun ajouterPalier(): Long
     fun retirerPalier(cle: Long)
@@ -73,7 +76,8 @@ private val AjoutsRepetitions = listOf(1, 2, 5, 10)
 
 /**
  * Édition d'une série en feuille du bas, au-dessus du détail : écran 7 pour une série simple (champs et
- * boutons +X), tableau des paliers 7·D pour une dégressive (spec §4.5.1). Affichée tant que [edition]
+ * boutons +X), tableau des paliers 7·D pour une dégressive (spec §4.5.1), avec la case « à l'échec » à droite des
+ * répétitions (du palier principal dans le tableau). Affichée tant que [edition]
  * n'est pas `null` ; quand elle le redevient (enregistrement, suppression), la feuille se referme avec son
  * animation. [paliersEnErreur] : clés des paliers dont les répétitions manquent.
  */
@@ -123,6 +127,8 @@ fun FeuilleEdition(
         if (contenu.tableau) {
             TableauPaliers(
                 paliers = paliers,
+                echec = contenu.echec,
+                onBasculerEchec = actions::basculerEchec,
                 paliersEnErreur = paliersEnErreur,
                 aFocaliser = aFocaliser,
                 onFocalise = { aFocaliser = null },
@@ -142,7 +148,10 @@ fun FeuilleEdition(
             ChampPoids(palier.poids, fond = Couleurs.Fond)
             RangeeAjouts(AjoutsPoids, actions::ajouterAuPoids, fond = Couleurs.Fond)
             LibelleChamp("Nombre de répétitions", Modifier.padding(top = 14.dp))
-            ChampRepetitions(palier.repetitions, erreur = enErreur, fond = Couleurs.Fond)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChampRepetitions(palier.repetitions, erreur = enErreur, modifier = Modifier.weight(1f), fond = Couleurs.Fond)
+                CaseEchec(coche = contenu.echec, onBasculer = actions::basculerEchec, taille = 62.dp, fond = Couleurs.Fond)
+            }
             RangeeAjouts(AjoutsRepetitions, actions::ajouterAuxRepetitions, fond = Couleurs.Fond)
             if (enErreur) MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 6.dp))
             // Passage en dégressive : la feuille bascule vers le tableau (spec §4.5.1).
@@ -191,12 +200,14 @@ fun FeuilleEdition(
 
 /**
  * 7·D : une ligne de 64 dp par palier sur fond `bg`, rayon 14, filets couleur surface ; repère « 1 » ou ↓,
- * poids × répétitions au clavier numérique, ✕ sur les paliers dégressifs ; « + Ajouter un palier » en bas.
- * « Suivant » du clavier enchaîne poids → répétitions → poids du palier suivant.
+ * poids × répétitions au clavier numérique, case « à l'échec » de la série sur le palier principal, ✕ sur les paliers
+ * dégressifs ; « + Ajouter un palier » en bas. « Suivant » du clavier enchaîne poids → répétitions → poids du palier suivant.
  */
 @Composable
 private fun TableauPaliers(
     paliers: List<ChampsPalier>,
+    echec: Boolean,
+    onBasculerEchec: () -> Unit,
     paliersEnErreur: Set<Long>,
     aFocaliser: Long?,
     onFocalise: () -> Unit,
@@ -233,6 +244,8 @@ private fun TableauPaliers(
                     versRepetitions = { repetitions.requestFocus() },
                     versSuivant = { if (suivant != null) demandes(suivant.cle).first.requestFocus() else focusManager.clearFocus() },
                     onRetirer = { onRetirer(palier.cle) },
+                    echec = echec,
+                    onBasculerEchec = onBasculerEchec,
                 )
             }
         }
@@ -251,6 +264,8 @@ private fun LignePalier(
     versRepetitions: () -> Unit,
     versSuivant: () -> Unit,
     onRetirer: () -> Unit,
+    echec: Boolean,
+    onBasculerEchec: () -> Unit,
 ) {
     val principal = numero == 1
     Row(
@@ -293,8 +308,8 @@ private fun LignePalier(
         )
         Spacer(Modifier.weight(1f))
         if (principal) {
-            // Le palier principal ne se retire pas : « Supprimer la série » retire tout.
-            Spacer(Modifier.size(48.dp))
+            // Le palier principal ne se retire pas (« Supprimer la série » retire tout) : sa place porte la case de la série.
+            CaseEchec(coche = echec, onBasculer = onBasculerEchec, taille = 48.dp, forme = Formes.Moyenne, tailleIcone = 22.dp)
         } else {
             BoutonRond(
                 onClick = onRetirer,

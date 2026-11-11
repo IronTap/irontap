@@ -55,6 +55,9 @@ ICONS = {
     'bell': ('<path d="M56 104a72 72 0 0 1 144 0c0 35.8 8.2 64.5 14.8 76A8 8 0 0 1 208 192H48a8 8 0 0 1-6.9-12C47.8 168.5 56 139.8 56 104Z"/><path d="M96 192a32 32 0 0 0 64 0"/>', 16),
     'check': ('<polyline points="40 144 96 200 224 72"/>', 20),
     'warning_circle': ('<circle cx="128" cy="128" r="96"/><line x1="128" y1="80" x2="128" y2="136"/><line x1="128" y1="172" x2="128" y2="174"/>', 18),
+    # Série à l'échec (BatteryEmpty) : trait 16 au bouton (22 dp), 24 aux petites tailles (13–15 dp), comme les autres.
+    'battery_empty': ('<rect x="16" y="64" width="200" height="128" rx="16"/><line x1="248" y1="96" x2="248" y2="160"/>', 16),
+    'battery_empty_small': ('<rect x="16" y="64" width="200" height="128" rx="16"/><line x1="248" y1="96" x2="248" y2="160"/>', 24),
     # Haltère complet (état vide de l'accueil, 40 dp).
     'barbell': ('<rect x="56" y="56" width="40" height="144" rx="8"/><rect x="160" y="56" width="40" height="144" rx="8"/><line x1="96" y1="128" x2="160" y2="128"/><path d="M200 80h24a8 8 0 0 1 8 8v80a8 8 0 0 1-8 8h-24"/><path d="M56 176H32a8 8 0 0 1-8-8V88a8 8 0 0 1 8-8h24"/>', 12),
 }

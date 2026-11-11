@@ -167,6 +167,7 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             if (bloc != null && tour != null) vm.demanderSuppressionTour(bloc, tour)
         },
         onFermer = vm::fermerTour,
+        onBasculerEchec = vm::basculerEchecTour,
     )
     panneaux.suppressionTour?.let { suppression ->
         DialogueSuppressionTour(
@@ -188,6 +189,7 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             override fun ajouterAuxRepetitions(valeur: Int) {
                 vm.ajouterAuxRepetitions(valeur)
             }
+            override fun basculerEchec() = vm.basculerEchec()
             override fun ajouterPalier() = vm.ajouterPalier()
             override fun retirerPalier(cle: Long) = vm.retirerPalier(cle)
             override fun enregistrer() = vm.enregistrerEdition()
@@ -543,11 +545,11 @@ private fun RowScope.NumeroLigne(numero: Int, modifier: Modifier = Modifier) {
     )
 }
 
-/** Valeur d'une série en [style], paliers dégressifs empilés dessous. */
+/** Valeur d'une série en [style], paliers dégressifs empilés dessous, batterie vide pour une série à l'échec. */
 @Composable
 private fun ValeurSerie(serie: SerieAvecPaliers, style: TextStyle, modifier: Modifier = Modifier) {
     val textes = serie.paliers.map { decrirePalier(it.poidsKg, it.repetitions) }
-    PaliersEmpiles(textes.firstOrNull().orEmpty(), textes.drop(1), style, modifier)
+    PaliersEmpiles(textes.firstOrNull().orEmpty(), textes.drop(1), style, modifier, echec = serie.serie.echec)
 }
 
 /**

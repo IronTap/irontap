@@ -13,9 +13,9 @@ data class SeanceHistorique(val entete: String, val series: List<LigneHistorique
 
 /**
  * Une série : palier principal « 10 × 45 kg », puis ses paliers dégressifs « 8 × 30 kg », affichés dessous
- * avec une flèche ↓ (spec §4.3.8, v1.4).
+ * avec une flèche ↓ (spec §4.3.8, v1.4). [echec] : série à l'échec (batterie vide après le palier principal).
  */
-data class LigneHistorique(val principal: String, val degressifs: List<String> = emptyList())
+data class LigneHistorique(val principal: String, val degressifs: List<String> = emptyList(), val echec: Boolean = false)
 
 /**
  * Regroupe les paliers [series] par séance puis par série, dans l'ordre reçu (de la séance la plus récente à
@@ -31,7 +31,7 @@ fun historiqueExercice(series: List<SerieHistorique>): HistoriqueExercice? {
             entete = listOfNotNull(premiere.libelle, formaterDateNumerique(premiere.date)).joinToString(" — "),
             series = seance.groupBy { it.serieId }.values.map { paliers ->
                 val textes = paliers.map { decrirePalierHistorique(it.poidsKg, it.repetitions) }
-                LigneHistorique(textes.first(), textes.drop(1))
+                LigneHistorique(textes.first(), textes.drop(1), paliers.first().echec)
             },
             superset = seance.firstNotNullOfOrNull { it.partenaire },
         )

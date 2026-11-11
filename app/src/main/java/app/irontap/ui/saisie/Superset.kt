@@ -1,6 +1,9 @@
 package app.irontap.ui.saisie
 
 import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.PalierEnCours
 import app.irontap.donnees.RoleSuperset
@@ -14,7 +17,16 @@ class ChampsOnglet {
     val poids = TextFieldState()
     val repetitions = TextFieldState()
 
-    /** Ni poids, ni répétitions : onglet ignoré par « Nouvel exercice » s'il n'a pas non plus de palier gardé. */
+    /**
+     * Case « à l'échec » (DECISIONS.md) : elle vaut pour toute la série, paliers d'une dégressive compris, et se décoche
+     * quand la série est enregistrée.
+     */
+    var echec by mutableStateOf(false)
+
+    /**
+     * Ni poids, ni répétitions : onglet ignoré par « Nouvel exercice » s'il n'a pas non plus de palier gardé. La case
+     * « à l'échec » n'y change rien : sans répétitions, il n'y a pas de série à marquer.
+     */
     val vide get() = poids.text.isBlank() && repetitions.text.isBlank()
 }
 

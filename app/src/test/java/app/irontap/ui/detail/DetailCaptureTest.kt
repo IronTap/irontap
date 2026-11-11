@@ -3,6 +3,9 @@ package app.irontap.ui.detail
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -91,6 +94,7 @@ class DetailCaptureTest {
     private object SansEdition : ActionsEdition {
         override fun ajouterAuPoids(valeur: Int) = Unit
         override fun ajouterAuxRepetitions(valeur: Int) = Unit
+        override fun basculerEchec() = Unit
         override fun ajouterPalier() = 0L
         override fun retirerPalier(cle: Long) = Unit
         override fun enregistrer() = Unit
@@ -267,12 +271,103 @@ class DetailCaptureTest {
                     onEnregistrer = {},
                     onSupprimer = {},
                     onFermer = {},
+                    onBasculerEchec = {},
                 )
             }
         }
         compose.onNode(hasContentDescription("Poids de l’exercice A")).requestFocus()
         compose.waitForIdle()
         compose.onNode(hasText("Valeurs du tour 4 en indication. Laisse B vide pour ajouter A seul.")).assertIsDisplayed()
+        captureScreenRoboImage()
+    }
+
+    // --- Case « à l'échec » (DECISIONS.md) ---
+
+    /** [complet] dont les séries [ids] sont à l'échec. */
+    private fun marquer(complet: EntrainementComplet, vararg ids: Long) = complet.copy(
+        exercices = complet.exercices.map { e ->
+            e.copy(series = e.series.map { if (it.serie.id in ids) it.copy(serie = it.serie.copy(echec = true)) else it })
+        },
+    )
+
+    /** Batterie vide après la valeur des séries à l'échec, dégressive comprise. */
+    @Test
+    fun echec() {
+        compose.setContent {
+            IronTapTheme {
+                ContenuDetail(marquer(complet, tirage.series[1].serie.id, tirage.series[2].serie.id), null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction())
+            }
+        }
+        compose.onAllNodes(hasContentDescription("À l’échec"), useUnmergedTree = true).assertCountEquals(2)
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** Cases étroites d'un tour : la valeur passe à la ligne plutôt que de chasser la batterie. */
+    @Test
+    fun echecSuperset() {
+        val marque = marquer(epaules, epaules.exercices[1].series[2].serie.id, epaules.exercices[2].series[1].serie.id)
+        compose.setContent {
+            IronTapTheme { ContenuDetail(marque, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
+        }
+        compose.onAllNodes(hasContentDescription("À l’échec"), useUnmergedTree = true).assertCountEquals(2)
+        compose.onRoot().captureRoboImage()
+    }
+
+    @Test
+    fun editionSerieEchec() {
+        afficher {
+            FeuilleEdition(
+                edition = EditionSerie(tirage.exercice, tirage.series[1], echec = true),
+                paliers = listOf(ChampsPalier(0, "45", "12")),
+                paliersEnErreur = emptySet(),
+                erreurEnregistrement = false,
+                actions = SansEdition,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNode(hasContentDescription("À l’échec")).assertIsOn().assertWidthIsEqualTo(62.dp).assertHeightIsEqualTo(62.dp)
+        captureScreenRoboImage()
+    }
+
+    @Test
+    fun editionDegressiveEchec() {
+        afficher {
+            FeuilleEdition(
+                edition = EditionSerie(tirage.exercice, tirage.series[2], tableau = true, echec = true),
+                paliers = listOf(ChampsPalier(0, "45", "10"), ChampsPalier(1, "30", "8"), ChampsPalier(2, "20", "6")),
+                paliersEnErreur = emptySet(),
+                erreurEnregistrement = false,
+                actions = SansEdition,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNode(hasContentDescription("À l’échec")).assertIsOn()
+        captureScreenRoboImage()
+    }
+
+    @Test
+    fun tourEchec() {
+        val a = epaules.exercices[1].exercice
+        val b = epaules.exercices[2].exercice
+        compose.setContent {
+            IronTapTheme {
+                ContenuDetail(epaules, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction())
+                FeuilleTour(
+                    edition = EditionTour(a, b, tour = 2, existant = true, series = emptyMap(), echecs = setOf(RoleSuperset.A)),
+                    champs = mapOf(RoleSuperset.A to ChampsPalier(-1, "8", "12"), RoleSuperset.B to ChampsPalier(-2, "12", "10")),
+                    paliersEnErreur = emptySet(),
+                    erreurEnregistrement = false,
+                    enregistrable = true,
+                    onEnregistrer = {},
+                    onSupprimer = {},
+                    onFermer = {},
+                    onBasculerEchec = {},
+                )
+            }
+        }
+        compose.waitForIdle()
+        compose.onNode(hasContentDescription("À l’échec, exercice A")).assertIsOn()
+        compose.onNode(hasContentDescription("À l’échec, exercice B")).assertIsOff()
         captureScreenRoboImage()
     }
 }

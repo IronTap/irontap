@@ -70,11 +70,11 @@ class ExportTest {
     fun `csv une ligne par palier, point decimal, poids vide au poids du corps`() {
         val tractions = entrainement(LocalDate.of(2026, 10, 9), null, exercice(1, "Tractions", null to 8))
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;45;12;1;;\r\n" +
-                "2026-10-12;Dos / biceps;Curl haltères;2;1;1;12.5;12;1;;\r\n" +
-                "2026-10-09;;Tractions;1;1;1;;8;2;;\r\n",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset;echec\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;;\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;45;12;1;;;\r\n" +
+                "2026-10-12;Dos / biceps;Curl haltères;2;1;1;12.5;12;1;;;\r\n" +
+                "2026-10-09;;Tractions;1;1;1;;8;2;;;\r\n",
             exporterCsv(listOf(dos, tractions)),
         )
     }
@@ -84,10 +84,10 @@ class ExportTest {
         val seance = entrainement(LocalDate.of(2026, 10, 12), null, degressive(1, "Tirage vertical", 45.0 to 10, 30.0 to 8, null to 6))
         assertEquals("Lun. 12 oct. 2026\n\nTirage vertical\n  45 kg × 10 ↓ 30 kg × 8 ↓ PDC × 6\n", exporterTexte(listOf(seance)))
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset\r\n" +
-                "2026-10-12;;Tirage vertical;1;1;1;45;10;1;;\r\n" +
-                "2026-10-12;;Tirage vertical;1;1;2;30;8;1;;\r\n" +
-                "2026-10-12;;Tirage vertical;1;1;3;;6;1;;\r\n",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset;echec\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;1;45;10;1;;;\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;2;30;8;1;;;\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;3;;6;1;;;\r\n",
             exporterCsv(listOf(seance)),
         )
     }
@@ -157,18 +157,18 @@ class ExportTest {
     @Test
     fun `superset en csv, numero du superset et role, ordre_serie au numero du tour`() {
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;\r\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;45;12;1;;\r\n" +
-                "2026-10-12;Dos / biceps;Curl haltères;2;1;1;12.5;12;1;;\r\n" +
-                "2026-10-15;Épaules;Développé militaire;1;1;1;30;10;2;;\r\n" +
-                "2026-10-15;Épaules;Élévations latérales;2;1;1;8;15;2;1;A\r\n" +
-                "2026-10-15;Épaules;Élévations latérales;2;2;1;8;12;2;1;A\r\n" +
-                "2026-10-15;Épaules;Élévations latérales;2;3;1;6;12;2;1;A\r\n" +
-                "2026-10-15;Épaules;Élévations latérales;2;3;2;4;10;2;1;A\r\n" +
-                "2026-10-15;Épaules;Curl marteau;3;1;1;12;12;2;1;B\r\n" +
-                "2026-10-15;Épaules;Curl marteau;3;3;1;12;10;2;1;B\r\n" +
-                "2026-10-15;Épaules;Oiseau;4;1;1;6;12;2;;\r\n",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset;echec\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;;\r\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;2;1;45;12;1;;;\r\n" +
+                "2026-10-12;Dos / biceps;Curl haltères;2;1;1;12.5;12;1;;;\r\n" +
+                "2026-10-15;Épaules;Développé militaire;1;1;1;30;10;2;;;\r\n" +
+                "2026-10-15;Épaules;Élévations latérales;2;1;1;8;15;2;1;A;\r\n" +
+                "2026-10-15;Épaules;Élévations latérales;2;2;1;8;12;2;1;A;\r\n" +
+                "2026-10-15;Épaules;Élévations latérales;2;3;1;6;12;2;1;A;\r\n" +
+                "2026-10-15;Épaules;Élévations latérales;2;3;2;4;10;2;1;A;\r\n" +
+                "2026-10-15;Épaules;Curl marteau;3;1;1;12;12;2;1;B;\r\n" +
+                "2026-10-15;Épaules;Curl marteau;3;3;1;12;10;2;1;B;\r\n" +
+                "2026-10-15;Épaules;Oiseau;4;1;1;6;12;2;;;\r\n",
             exporterCsv(listOf(dos, epaules)),
         )
     }
@@ -181,7 +181,7 @@ class ExportTest {
             ExerciceAvecSeries(Exercice(2, 1, "Élévations", 1, "uuid-2", RoleSuperset.A), listOf(serieDeTest(1, 2, 1, 8.0, 15, t0))),
         )
         assertEquals("Jeu. 15 oct. 2026\n\nÉlévations\n  8 kg × 15\n", exporterTexte(listOf(seul)))
-        assertTrue(exporterCsv(listOf(seul)).endsWith(";8;15;1;;\r\n"))
+        assertTrue(exporterCsv(listOf(seul)).endsWith(";8;15;1;;;\r\n"))
     }
 
     @Test
@@ -197,8 +197,8 @@ class ExportTest {
             apercuExport(exporterTexte(listOf(dos))),
         )
         assertEquals(
-            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset\n" +
-                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;",
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset;echec\n" +
+                "2026-10-12;Dos / biceps;Tirage vertical;1;1;1;40;15;1;;;",
             apercuExport(exporterCsv(listOf(dos)), lignes = 2),
         )
         // Pas de ligne vide finale.
@@ -210,5 +210,30 @@ class ExportTest {
         val aujourdhui = LocalDate.of(2026, 10, 14)
         assertEquals("irontap-2026-10-12.txt", nomFichierExport(FormatExport.Texte, LocalDate.of(2026, 10, 12), aujourdhui))
         assertEquals("irontap-historique-2026-10-14.csv", nomFichierExport(FormatExport.Csv, null, aujourdhui))
+    }
+
+    @Test
+    fun `serie a l'echec, mention en texte, 1 sur chaque palier en csv`() {
+        val tirage = ExerciceAvecSeries(
+            Exercice(1, 1, "Tirage vertical", 1),
+            listOf(serieDeTest(1, 1, 1, 45.0, 10, t0), serieDeTest(2, 1, 2, 45.0, 10, t0, 30.0 to 8, echec = true)),
+        )
+        val elevations = ExerciceAvecSeries(Exercice(2, 1, "Élévations", 2, "s1", RoleSuperset.A), listOf(serieDeTest(3, 2, 1, 8.0, 15, t0, echec = true)))
+        val curl = ExerciceAvecSeries(Exercice(3, 1, "Curl", 3, "s1", RoleSuperset.B), listOf(serieDeTest(4, 3, 1, 12.0, 12, t0)))
+        val seance = entrainement(LocalDate.of(2026, 10, 12), null, tirage, elevations, curl)
+        assertEquals(
+            "Lun. 12 oct. 2026\n\nTirage vertical\n  45 kg × 10\n  45 kg × 10 ↓ 30 kg × 8 (à l’échec)\n\n" +
+                "Superset : Élévations + Curl\n  A 8 kg × 15 (à l’échec) · B 12 kg × 12\n",
+            exporterTexte(listOf(seance)),
+        )
+        assertEquals(
+            "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset;echec\r\n" +
+                "2026-10-12;;Tirage vertical;1;1;1;45;10;1;;;\r\n" +
+                "2026-10-12;;Tirage vertical;1;2;1;45;10;1;;;1\r\n" +
+                "2026-10-12;;Tirage vertical;1;2;2;30;8;1;;;1\r\n" +
+                "2026-10-12;;Élévations;2;1;1;8;15;1;1;A;1\r\n" +
+                "2026-10-12;;Curl;3;1;1;12;12;1;1;B;\r\n",
+            exporterCsv(listOf(seance)),
+        )
     }
 }

@@ -30,7 +30,9 @@ import app.irontap.ui.composants.ApparenceChampPalier
 import app.irontap.ui.composants.BadgeLettre
 import app.irontap.ui.composants.BoutonPrincipal
 import app.irontap.ui.composants.BoutonTexte
+import app.irontap.ui.composants.CaseEchec
 import app.irontap.ui.composants.ChampPalier
+import app.irontap.ui.composants.DESCRIPTION_ECHEC
 import app.irontap.ui.composants.FeuilleNocturne
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.MessageErreur
@@ -39,7 +41,8 @@ import app.irontap.ui.theme.Typo
 
 /**
  * « Ajouter un tour » / « Modifier le tour N » d'un superset (maquette 3·S+ T1) : blocs A puis B, poids × répétitions
- * au clavier numérique (« Suivant » : A poids → A reps → B poids → B reps), valeurs du tour précédent en indication.
+ * au clavier numérique (« Suivant » : A poids → A reps → B poids → B reps), valeurs du tour précédent en indication,
+ * case « à l'échec » à droite des répétitions.
  * Un bloc vide est ignoré ; les deux vides désactivent « Enregistrer le tour ». Affichée tant que [edition] n'est pas
  * `null`, refermée avec son animation ensuite.
  */
@@ -54,6 +57,7 @@ fun FeuilleTour(
     onEnregistrer: () -> Unit,
     onSupprimer: (EditionTour) -> Unit,
     onFermer: () -> Unit,
+    onBasculerEchec: (RoleSuperset) -> Unit,
 ) {
     var affichee by remember { mutableStateOf(edition) }
     if (edition != null) affichee = edition
@@ -117,6 +121,13 @@ fun FeuilleTour(
                         onSuivant = KeyboardActionHandler { if (dernier) focusManager.clearFocus() else focus[index * 2 + 2].requestFocus() },
                         apparence = ApparenceChampPalier.Tour,
                         indication = indication?.repetitions?.toString() ?: "0",
+                    )
+                    CaseEchec(
+                        coche = role in contenu.echecs,
+                        onBasculer = { onBasculerEchec(role) },
+                        taille = 58.dp,
+                        fond = Couleurs.Fond,
+                        description = "$DESCRIPTION_ECHEC, exercice $role",
                     )
                 }
             }

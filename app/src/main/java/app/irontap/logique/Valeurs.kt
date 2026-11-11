@@ -43,6 +43,13 @@ fun decrirePalier(poidsKg: Double?, repetitions: Int): String =
 fun decrireSerie(paliers: List<ValeursPalier>): String =
     paliers.joinToString(" ↓ ") { decrirePalier(it.poidsKg, it.repetitions) }
 
+/** [decrireSerie], suivi de « (à l’échec) » pour une série à l'échec (toast, export texte). */
+fun decrireSerie(paliers: List<ValeursPalier>, echec: Boolean): String =
+    decrireSerie(paliers) + if (echec) " $MENTION_ECHEC" else ""
+
+/** Marqueur « à l'échec » d'une série, en texte. */
+const val MENTION_ECHEC = "(à l’échec)"
+
 /** « 15 × 40 kg », ou « 12 × PDC » au poids du corps : répétitions en tête (historique de l'exercice, 3g). */
 fun decrirePalierHistorique(poidsKg: Double?, repetitions: Int): String =
     "$repetitions × " + if (poidsKg != null) "${formaterPoids(poidsKg)} kg" else "PDC"

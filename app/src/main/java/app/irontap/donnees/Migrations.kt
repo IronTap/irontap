@@ -64,3 +64,15 @@ internal object Migration2Vers3 : Migration(2, 3) {
         )
     }
 }
+
+/**
+ * v3 → v4 (marqueur « à l'échec », DECISIONS.md) : `serie.echec`, et `echec_a` / `echec_b` du superset en cours de
+ * saisie. Faux pour l'existant : aucune série n'était marquée.
+ */
+internal object Migration3Vers4 : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `serie` ADD COLUMN `echec` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `superset_en_cours` ADD COLUMN `echec_a` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `superset_en_cours` ADD COLUMN `echec_b` INTEGER NOT NULL DEFAULT 0")
+    }
+}

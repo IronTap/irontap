@@ -82,4 +82,16 @@ class HistoriqueExerciceTest {
     fun `date numerique`() {
         assertEquals("05/10/2026", formaterDateNumerique(LocalDate.of(2026, 10, 5)))
     }
+
+    @Test
+    fun `serie a l'echec, marqueur lu sur son premier palier`() {
+        val series = historiqueExercice(
+            listOf(
+                serie(1, douze, null, 45.0, 10),
+                serie(1, douze, null, 45.0, 10).copy(echec = true),
+                serie(1, douze, null, 30.0, 8, serieId = derniereSerie).copy(echec = true),
+            ),
+        )?.seances?.single()?.series
+        assertEquals(listOf(LigneHistorique("10 × 45 kg"), LigneHistorique("10 × 45 kg", listOf("8 × 30 kg"), echec = true)), series)
+    }
 }

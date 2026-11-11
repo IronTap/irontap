@@ -940,4 +940,115 @@ class SaisieViewModelTest {
         assertEquals(listOf("Élévations", "8", "15"), reprise.valeurs(RoleSuperset.A))
         assertEquals(listOf("Curl", "12", "11"), reprise.valeurs(RoleSuperset.B))
     }
+
+    // --- Case « à l'échec » (DECISIONS.md) ---
+
+    private fun SaisieViewModel.echec(role: RoleSuperset = RoleSuperset.A) = champs(role).echec
+
+    private suspend fun echecs(id: Long) = dao.lireComplet(id)!!.exercices.map { e -> e.series.map { it.serie.echec } }
+
+    @Test
+    fun `case a l'echec enregistree avec la serie puis decochee, gardee pendant une degressive, retablie par Annuler`() = runTest {
+        val id = creer()
+        val vm = ecran(attendreToast = toastsPermanents)
+        vm.enCours()
+        vm.saisir(nom = "Tirage", poids = "45", repetitions = "10")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
+        vm.ecrituresTerminees()
+        assertEquals("Série 1 enregistrée · 45 kg × 10", dernierToast())
+
+        vm.saisir(poids = "45", repetitions = "10")
+        vm.basculerEchec()
+        vm.basculerEchec()
+        assertFalse(vm.echec())
+        vm.basculerEchec()
+        assertTrue(vm.echec())
+        vm.degressive()
+        vm.paliersGardes(1)
+        vm.ecrituresTerminees()
+        // La case vaut pour toute la série : elle reste cochée pour le palier suivant.
+        assertTrue(vm.echec())
+        vm.saisir(poids = "30", repetitions = "8")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
+        vm.ecrituresTerminees()
+        assertEquals("Série 2 enregistrée · 45 kg × 10 ↓ 30 kg × 8 (à l’échec)", dernierToast())
+        assertFalse(vm.echec())
+        assertEquals(listOf(listOf(false, true)), echecs(id))
+
+        // Annuler remet la case cochée avec les valeurs.
+        vm.annulerSerie()
+        vm.paliersGardes(1)
+        vm.ecrituresTerminees()
+        assertTrue(vm.echec())
+        assertEquals(listOf(listOf(false)), echecs(id))
+    }
+
+    @Test
+    fun `nouvel exercice et dialogue 4a gardent la case, passer sans rien enregistrer la decoche`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
+        vm.basculerEchec()
+        vm.enregistrer(Suite.NouvelExercice)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.entrainement?.nouvelExercice == true }
+        vm.ecrituresTerminees()
+        assertFalse(vm.echec())
+
+        vm.saisir(nom = "Fentes", repetitions = "10")
+        vm.enregistrer(Suite.NouvelleSerie)
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.nomVerrouille == "Fentes" }
+        vm.ecrituresTerminees()
+        // Champs vides et case cochée : rien à enregistrer, la case se décoche avec le passage.
+        vm.basculerEchec()
+        vm.enregistrer(Suite.NouvelExercice)
+        assertTrue(vm.formulaire.value.passage is PassageExercice.Simple)
+        vm.confirmerPassage()
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.entrainement?.nouvelExercice == true }
+        vm.ecrituresTerminees()
+        assertFalse(vm.echec())
+
+        vm.saisir(nom = "Mollets", repetitions = "20")
+        vm.basculerEchec()
+        vm.demanderFin()
+        val dialogue = vm.formulaire.attendre { it.dialogue != null }.dialogue as DialogueFin.AvecSerie
+        assertTrue(dialogue.serie.echec)
+        vm.terminer(avecSerie = true)
+        vm.etat.attendre { it == EtatSaisie.Aucun }
+        assertEquals(listOf(listOf(true), listOf(false), listOf(true)), echecs(id))
+    }
+
+    @Test
+    fun `superset, une case par onglet, memorisee, restauree apres un kill, decochee apres le tour`() = runTest {
+        val id = creer()
+        val vm = ecran()
+        vm.enCours()
+        vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
+        vm.commencerSuperset()
+        vm.enSuperset()
+        vm.basculer(RoleSuperset.B)
+        vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "11")
+        vm.basculerEchec()
+        assertTrue(vm.echec(RoleSuperset.B))
+        assertFalse(vm.echec(RoleSuperset.A))
+        // Mémorisée en base à chaque appui : l'appli peut être tuée.
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.echecB == true }
+        vms.vider()
+
+        val reprise = ecran(BrouillonSaisie())
+        reprise.enSuperset()
+        assertEquals(RoleSuperset.B, reprise.ongletActif)
+        assertTrue(reprise.echec(RoleSuperset.B))
+        assertFalse(reprise.echec(RoleSuperset.A))
+
+        reprise.enregistrer(Suite.NouvelleSerie)
+        reprise.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
+        reprise.ecrituresTerminees()
+        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 11 (à l’échec)", dernierToast())
+        assertFalse(reprise.echec(RoleSuperset.B))
+        assertEquals(false, dao.lireEnCoursComplet()?.superset?.echecB)
+        assertEquals(listOf(listOf(false), listOf(true)), echecs(id))
+    }
 }

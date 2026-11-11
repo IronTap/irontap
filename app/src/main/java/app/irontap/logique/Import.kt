@@ -21,8 +21,8 @@ data class ExerciceImporte(
     val role: RoleSuperset? = null,
 )
 
-/** Série importée : son numéro et ses paliers, le principal d'abord. */
-data class SerieImportee(val ordre: Int, val paliers: List<ValeursPalier>)
+/** Série importée : son numéro et ses paliers, le principal d'abord. [echec] : série à l'échec. */
+data class SerieImportee(val ordre: Int, val paliers: List<ValeursPalier>, val echec: Boolean = false)
 
 /** Erreur de lecture : [ligne] du fichier (1 = en-tête), `null` quand elle concerne le fichier entier. */
 data class ErreurImport(val ligne: Int?, val message: String) {
@@ -36,7 +36,7 @@ sealed interface LectureImport {
     data class Erreurs(val erreurs: List<ErreurImport>) : LectureImport
 }
 
-/** Colonnes indispensables : celles de la spec §5. `entrainement`, `superset` et `role_superset` sont facultatives. */
+/** Colonnes indispensables : celles de la spec §5. `entrainement`, `superset`, `role_superset` et `echec` sont facultatives. */
 private val Obligatoires = EnteteCsv.take(8)
 
 /**
@@ -51,6 +51,8 @@ private val Obligatoires = EnteteCsv.take(8)
  *   répétitions de 1 à 999. Exercices, séries et paliers renumérotés 1, 2… dans leur ordre, sauf les tours d'un
  *   superset, gardés tels quels (les tours vides sont retirés). Un exercice seul de son superset devient ordinaire,
  *   comme dans l'appli ; sans colonnes de superset (anciens exports), A et B reviennent en deux exercices ordinaires.
+ * - Marqueur « à l'échec » : colonne `echec`, 1 ou vide (0 accepté) ; une série est à l'échec si l'une de ses lignes
+ *   l'est. Sans la colonne (anciens exports), aucune ne l'est.
  * Toute erreur refuse le fichier entier, avec chaque ligne fautive.
  */
 fun lireExportCsv(contenu: String): LectureImport {
@@ -168,6 +170,7 @@ private class LigneLue(
     val entrainement: Int?,
     val superset: Int?,
     val role: RoleSuperset?,
+    val echec: Boolean,
 ) {
     /** Suit [precedente] dans un même entraînement, dans l'ordre de l'export. */
     fun suit(precedente: LigneLue): Boolean {
@@ -230,11 +233,19 @@ private fun lireLigne(enregistrement: Enregistrement, colonnes: Map<String, Int>
     }
     if (superset.isEmpty() && roleTexte.isNotEmpty()) erreur("rôle de superset sans numéro de superset")
     if (superset.isNotEmpty() && roleTexte.isEmpty()) erreur("superset sans rôle (A ou B)")
+    val echec = when (val texte = champ("echec")) {
+        "", "0" -> false
+        "1" -> true
+        else -> {
+            erreur("échec « $texte » invalide (1 ou vide)")
+            false
+        }
+    }
 
     if (erreurs.size > nombreErreurs) return null
     return LigneLue(
         ligne, checkNotNull(date), libelle, nom, checkNotNull(exercice), checkNotNull(serie), checkNotNull(palier),
-        ValeursPalier(poids, checkNotNull(repetitions)), entrainement, numeroSuperset, role,
+        ValeursPalier(poids, checkNotNull(repetitions)), entrainement, numeroSuperset, role, echec,
     )
 }
 
@@ -286,7 +297,7 @@ private fun construire(lignes: List<LigneLue>, erreurs: MutableList<ErreurImport
                     erreurs += ErreurImport(ligne.ligne, "palier ${ligne.palier} de la série $ordre de « ${ligne.nom} » déjà présent à la ligne ${it.ligne}")
                 }
             }
-            SerieImportee(ordre, lignesSerie.sortedBy { it.palier }.distinctBy { it.palier }.map { it.valeurs })
+            SerieImportee(ordre, lignesSerie.sortedBy { it.palier }.distinctBy { it.palier }.map { it.valeurs }, lignesSerie.any { it.echec })
         }
         reference to series
     }
@@ -341,7 +352,9 @@ fun EntrainementComplet.versImport(): EntrainementImporte {
             val numero = exercice.exercice.supersetId?.let { supersets[it] }
             ExerciceImporte(
                 nom = exercice.exercice.nom,
-                series = exercice.series.mapIndexed { index, serie -> SerieImportee(if (numero != null) serie.serie.ordre else index + 1, serie.valeurs) },
+                series = exercice.series.mapIndexed { index, serie ->
+                    SerieImportee(if (numero != null) serie.serie.ordre else index + 1, serie.valeurs, serie.serie.echec)
+                },
                 superset = numero,
                 role = exercice.exercice.supersetRole.takeIf { numero != null },
             )
@@ -351,15 +364,21 @@ fun EntrainementComplet.versImport(): EntrainementImporte {
 
 /**
  * Sépare les entraînements [importes] de ceux déjà présents dans [existants] : même date, même libellé, mêmes
- * exercices, séries, paliers et supersets. Un pour un : un fichier qui contient deux fois le même entraînement en
- * ajoute un si l'historique en a déjà un. Retourne les entraînements à ajouter, dans l'ordre, et le nombre d'ignorés.
+ * exercices, séries, paliers et supersets ; le marqueur « à l'échec » n'entre pas en compte (un entraînement marqué
+ * depuis son export n'est pas importé une seconde fois). Un pour un : un fichier qui contient deux fois le même
+ * entraînement en ajoute un si l'historique en a déjà un. Retourne les entraînements à ajouter, dans l'ordre, et le
+ * nombre d'ignorés.
  */
 fun ecarterDoublons(importes: List<EntrainementImporte>, existants: List<EntrainementImporte>): Pair<List<EntrainementImporte>, Int> {
-    val restants = existants.groupingBy { it }.eachCount().toMutableMap()
+    val restants = existants.groupingBy { it.sansEchec() }.eachCount().toMutableMap()
     val nouveaux = importes.filter { entrainement ->
-        val n = restants[entrainement] ?: 0
-        if (n > 0) restants[entrainement] = n - 1
+        val cle = entrainement.sansEchec()
+        val n = restants[cle] ?: 0
+        if (n > 0) restants[cle] = n - 1
         n == 0
     }
     return nouveaux to importes.size - nouveaux.size
 }
+
+private fun EntrainementImporte.sansEchec() =
+    copy(exercices = exercices.map { exercice -> exercice.copy(series = exercice.series.map { it.copy(echec = false) }) })

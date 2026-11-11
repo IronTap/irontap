@@ -52,7 +52,7 @@ sealed interface EtatDetail {
 
 /**
  * Feuille d'édition : [serie] `null` pour « Ajouter une série ». [tableau] : tableau des paliers (7·D), pour une
- * dégressive ou après « + Ajouter un palier » ; sinon écran 7 avec ses boutons +X.
+ * dégressive ou après « + Ajouter un palier » ; sinon écran 7 avec ses boutons +X. [echec] : case « à l'échec ».
  */
 data class EditionSerie(
     val exercice: Exercice,
@@ -60,11 +60,13 @@ data class EditionSerie(
     val tableau: Boolean = false,
     /** Appui sur « — » d'un superset : la série manquante est ajoutée à ce tour, pas en dernier. */
     val tour: Int? = null,
+    val echec: Boolean = false,
 )
 
 /**
  * Feuille « Ajouter un tour » (3·S+ T1), ou « Modifier le tour N » ([existant]) : A et B ensemble, au clavier.
- * [indications] : valeurs du tour précédent, en placeholder ; [precedent] : son numéro.
+ * [indications] : valeurs du tour précédent, en placeholder ; [precedent] : son numéro. [echecs] : rôles dont la case
+ * « à l'échec » est cochée.
  */
 data class EditionTour(
     val a: Exercice,
@@ -74,6 +76,7 @@ data class EditionTour(
     val series: Map<RoleSuperset, SerieAvecPaliers>,
     val indications: Map<RoleSuperset, ValeursPalier> = emptyMap(),
     val precedent: Int? = null,
+    val echecs: Set<RoleSuperset> = emptySet(),
 ) {
     fun exercice(role: RoleSuperset) = if (role == RoleSuperset.A) a else b
 }
@@ -213,8 +216,11 @@ class DetailViewModel(
         paliers.clear()
         serie?.paliers?.forEach { paliers += champs(it.poidsKg?.let(::formaterPoids).orEmpty(), it.repetitions.toString()) }
         if (paliers.isEmpty()) paliers += champs()
-        _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie, tableau = paliers.size > 1, tour = tour)) }
+        _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie, tableau = paliers.size > 1, tour = tour, echec = serie?.serie?.echec == true)) }
     }
+
+    /** Case « à l'échec » de la feuille d'édition, enregistrée avec la série. */
+    fun basculerEchec() = _panneaux.update { it.copy(edition = it.edition?.let { edition -> edition.copy(echec = !edition.echec) }) }
 
     /** Boutons +X de l'écran 7 (série simple : palier principal). */
     fun ajouterAuPoids(valeur: Int) = paliers.firstOrNull()?.poids?.let { it.setTextAndPlaceCursorAtEnd(ajouterPoids(it.text.toString(), valeur)) }
@@ -250,9 +256,9 @@ class DetailViewModel(
             }
             is LecturePaliers.Valide -> ecrire(apres = ::fermerEdition) {
                 if (edition.serie == null) {
-                    dao.ajouterSerie(edition.exercice.id, lecture.paliers, horloge.maintenant(), ordre = edition.tour)
+                    dao.ajouterSerie(edition.exercice.id, lecture.paliers, horloge.maintenant(), ordre = edition.tour, echec = edition.echec)
                 } else {
-                    dao.modifierSerie(edition.serie.serie.id, lecture.paliers, horloge.maintenant())
+                    dao.modifierSerie(edition.serie.serie.id, lecture.paliers, horloge.maintenant(), edition.echec)
                 }
             }
         }
@@ -276,23 +282,29 @@ class DetailViewModel(
         _panneaux.update { Panneaux(tour = EditionTour(bloc.a.exercice, bloc.b.exercice, tour, existant = false, series = emptyMap(), indications, precedent?.numero)) }
     }
 
-    /** Appui sur le numéro d'un tour : « Modifier le tour N », palier principal de A et de B pré-remplis. */
+    /** Appui sur le numéro d'un tour : « Modifier le tour N », palier principal et case « à l'échec » de A et de B pré-remplis. */
     fun ouvrirModificationTour(bloc: BlocDetail.Superset, tour: TourSuperset) {
         val series = buildMap { RoleSuperset.entries.forEach { role -> tour.serie(role)?.let { put(role, it) } } }
         RoleSuperset.entries.forEach { role ->
             val principal = series[role]?.valeurs?.firstOrNull()
             champsTour.getValue(role).remplir(principal?.poidsKg?.let(::formaterPoids).orEmpty(), principal?.repetitions?.toString().orEmpty())
         }
-        _panneaux.update { Panneaux(tour = EditionTour(bloc.a.exercice, bloc.b.exercice, tour.numero, existant = true, series = series)) }
+        val echecs = series.filterValues { it.serie.echec }.keys
+        _panneaux.update { Panneaux(tour = EditionTour(bloc.a.exercice, bloc.b.exercice, tour.numero, existant = true, series = series, echecs = echecs)) }
+    }
+
+    /** Case « à l'échec » d'un bloc de la feuille d'un tour ; ignorée si le bloc reste vide. */
+    fun basculerEchecTour(role: RoleSuperset) = _panneaux.update { panneaux ->
+        panneaux.copy(tour = panneaux.tour?.let { tour -> tour.copy(echecs = if (role in tour.echecs) tour.echecs - role else tour.echecs + role) })
     }
 
     /** Au moins un bloc rempli : « Enregistrer le tour » est actif. */
     fun tourEnregistrable() = champsTour.values.any { !it.vide }
 
     /**
-     * « Enregistrer le tour » : un bloc vide est ignoré (la série de ce tour, s'il en a une, ne change pas) ; un bloc
-     * rempli demande des répétitions. Le palier principal saisi remplace celui de la série, ses paliers dégressifs
-     * sont gardés.
+     * « Enregistrer le tour » : un bloc vide est ignoré (la série de ce tour, s'il en a une, ne change pas, case
+     * « à l'échec » comprise) ; un bloc rempli demande des répétitions. Le palier principal saisi remplace celui de la
+     * série, ses paliers dégressifs sont gardés ; la case remplace son marqueur.
      */
     fun enregistrerTour() {
         val edition = _panneaux.value.tour ?: return
@@ -317,6 +329,8 @@ class DetailViewModel(
                 a = paliers[RoleSuperset.A],
                 b = paliers[RoleSuperset.B],
                 maintenant = horloge.maintenant(),
+                echecA = RoleSuperset.A in edition.echecs,
+                echecB = RoleSuperset.B in edition.echecs,
             )
         }
     }

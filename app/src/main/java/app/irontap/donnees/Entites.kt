@@ -63,7 +63,8 @@ enum class RoleSuperset {
 
 /**
  * Une exécution d'un exercice. [ordre] commence à 1. Ses poids et répétitions sont dans ses [Palier] :
- * un seul pour une série simple, plusieurs pour une dégressive (spec §6, v1.4).
+ * un seul pour une série simple, plusieurs pour une dégressive (spec §6, v1.4). [echec] : série menée à l'échec,
+ * ou tout près (marqueur « à l'échec », DECISIONS.md), pour savoir à la séance suivante s'il est temps de monter la charge.
  */
 @Entity(
     tableName = "serie",
@@ -83,6 +84,7 @@ data class Serie(
     val ordre: Int,
     @ColumnInfo(name = "cree_le") val creeLe: Instant,
     @ColumnInfo(name = "modifie_le") val modifieLe: Instant? = null,
+    @ColumnInfo(defaultValue = "0") val echec: Boolean = false,
 )
 
 /**
@@ -143,8 +145,8 @@ data class PalierEnCours(
 
 /**
  * Superset en cours de saisie (spec §4.3.10) : noms des onglets tant qu'ils ne sont pas verrouillés, onglet
- * actif et valeurs saisies (texte brut des champs), pour être retrouvés si l'appli est tuée. Supprimé quand
- * le superset se termine (« Nouvel exercice », fin de l'entraînement).
+ * actif et valeurs saisies (texte brut des champs, marqueur « à l'échec »), pour être retrouvés si l'appli est tuée.
+ * Supprimé quand le superset se termine (« Nouvel exercice », fin de l'entraînement).
  */
 @Entity(
     tableName = "superset_en_cours",
@@ -167,6 +169,8 @@ data class SupersetEnCours(
     @ColumnInfo(name = "repetitions_a") val repetitionsA: String = "",
     @ColumnInfo(name = "poids_b") val poidsB: String = "",
     @ColumnInfo(name = "repetitions_b") val repetitionsB: String = "",
+    @ColumnInfo(name = "echec_a", defaultValue = "0") val echecA: Boolean = false,
+    @ColumnInfo(name = "echec_b", defaultValue = "0") val echecB: Boolean = false,
 ) {
     fun nom(role: RoleSuperset) = if (role == RoleSuperset.A) nomA else nomB
 }
@@ -267,6 +271,8 @@ data class SerieHistorique(
     val repetitions: Int,
     /** Autre exercice du superset dont l'exercice faisait partie ce jour-là, `null` hors superset. */
     val partenaire: String? = null,
+    /** Série à l'échec ([Serie.echec]), répété sur chacun de ses paliers. */
+    val echec: Boolean = false,
 )
 
 /** Room ne garantit pas l'ordre des relations : on trie après lecture. */
@@ -283,8 +289,9 @@ internal fun EntrainementEnCours.trie() = copy(exercices = exercices.trie(), pal
 /**
  * Saisie d'un onglet pour un tour de superset : [nom] tel que saisi (ignoré pour un exercice déjà créé), puis
  * palier courant [poidsKg] × [repetitions] ; [repetitions] `null` : seulement les paliers gardés par « Dégressive ».
+ * [echec] : série à l'échec.
  */
-data class SaisieOnglet(val nom: String, val poidsKg: Double?, val repetitions: Int?)
+data class SaisieOnglet(val nom: String, val poidsKg: Double?, val repetitions: Int?, val echec: Boolean = false)
 
 /** Tour de superset enregistré : son numéro et la série de chaque onglet enregistré. */
 data class TourEnregistre(val tour: Int, val series: Map<RoleSuperset, SerieAvecPaliers>)

@@ -18,7 +18,8 @@ import app.irontap.ui.theme.Typo
 /**
  * Valeur d'une série : palier principal en [stylePrincipal], puis paliers dégressifs empilés dessous
  * (gap 2) en 16 / 500 neutre-300, précédés d'une flèche ↓ accent-300 de 13 dp (détail 6a, popup 3g).
- * [retrait] : décalage des paliers dégressifs (2 dp dans la popup 3g, aucun dans le détail 6a).
+ * [retrait] : décalage des paliers dégressifs (2 dp dans la popup 3g, aucun dans le détail 6a). [echec] : batterie vide
+ * après le palier principal (série à l'échec, DECISIONS.md).
  */
 @Composable
 fun PaliersEmpiles(
@@ -27,9 +28,18 @@ fun PaliersEmpiles(
     stylePrincipal: TextStyle,
     modifier: Modifier = Modifier,
     retrait: Dp = 0.dp,
+    echec: Boolean = false,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(principal, style = stylePrincipal, color = Couleurs.Texte)
+        if (echec) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Le texte cède la place à l'icône sur une cellule étroite (tour de superset) : il passe à la ligne.
+                Text(principal, style = stylePrincipal, color = Couleurs.Texte, modifier = Modifier.weight(1f, fill = false))
+                IconeEchec()
+            }
+        } else {
+            Text(principal, style = stylePrincipal, color = Couleurs.Texte)
+        }
         degressifs.forEach { palier ->
             Row(
                 modifier = Modifier.padding(start = retrait),

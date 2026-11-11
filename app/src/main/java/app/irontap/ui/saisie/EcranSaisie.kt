@@ -99,7 +99,9 @@ import app.irontap.ui.composants.BoutonPrincipal
 import app.irontap.ui.composants.BoutonRond
 import app.irontap.ui.composants.BoutonSecondaire
 import app.irontap.ui.composants.BoutonTexte
+import app.irontap.ui.composants.CaseEchec
 import app.irontap.ui.composants.ChampPoids
+import app.irontap.ui.composants.DESCRIPTION_ECHEC
 import app.irontap.ui.composants.ChampRepetitions
 import app.irontap.ui.composants.ChampTexte
 import app.irontap.ui.composants.DialogueNocturne
@@ -126,6 +128,9 @@ interface ActionsSaisie {
     fun choisir(suggestion: Suggestion)
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
+
+    /** Case « à l'échec » de la série en cours. */
+    fun basculerEchec()
     fun enregistrer(suite: Suite)
     fun degressive()
     fun demanderFin()
@@ -176,6 +181,7 @@ fun EcranSaisie(onQuitter: () -> Unit, vm: SaisieViewModel = viewModel(factory =
                 nom = champs.nom,
                 poids = champs.poids,
                 repetitions = champs.repetitions,
+                echec = champs.echec,
                 realtime = vm::realtime,
                 actions = vm,
                 onglets = e.superset?.let {
@@ -202,8 +208,10 @@ fun ContenuSaisie(
     repetitions: TextFieldState,
     realtime: () -> Long,
     actions: ActionsSaisie,
-    /** Superset en cours : onglets A / B à la place du champ du nom (S3) ; [nom], [poids], [repetitions] sont ceux de l'onglet actif. */
+    /** Superset en cours : onglets A / B à la place du champ du nom (S3) ; [nom], [poids], [repetitions], [echec] sont ceux de l'onglet actif. */
     onglets: OngletsSuperset? = null,
+    /** Case « à l'échec » cochée pour la série en cours. */
+    echec: Boolean = false,
 ) {
     val focusManager = LocalFocusManager.current
     val superset = etat.etatSuperset?.takeIf { onglets != null }
@@ -288,7 +296,16 @@ fun ContenuSaisie(
                         RangeeAjouts(AjoutsPoids, actions::ajouterAuPoids)
                         Spacer(Modifier.height(12.dp))
                         LibelleChamp("Nombre de répétitions")
-                        ChampRepetitions(repetitions, erreur = formulaire.erreurRepetitions)
+                        // Case « à l'échec » à droite du champ, carrée à sa hauteur, comme le bouton Historique pour le nom.
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ChampRepetitions(repetitions, erreur = formulaire.erreurRepetitions, modifier = Modifier.weight(1f))
+                            CaseEchec(
+                                coche = echec,
+                                onBasculer = actions::basculerEchec,
+                                taille = 62.dp,
+                                description = if (superset != null) "$DESCRIPTION_ECHEC, exercice $actif" else DESCRIPTION_ECHEC,
+                            )
+                        }
                         RangeeAjouts(AjoutsRepetitions, actions::ajouterAuxRepetitions)
                         if (formulaire.erreurRepetitions) {
                             MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 6.dp))
@@ -987,6 +1004,6 @@ private fun SectionSeance(seance: SeanceHistorique) {
     ) {
         Text(seance.entete, style = Typo.EnteteSeance, color = Couleurs.Neutre400)
         seance.superset?.let { EtiquetteSuperset("En superset avec $it") }
-        seance.series.forEach { PaliersEmpiles(it.principal, it.degressifs, Typo.TitreDetail, retrait = 2.dp) }
+        seance.series.forEach { PaliersEmpiles(it.principal, it.degressifs, Typo.TitreDetail, retrait = 2.dp, echec = it.echec) }
     }
 }

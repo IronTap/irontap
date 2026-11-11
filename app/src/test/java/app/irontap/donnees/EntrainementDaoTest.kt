@@ -256,7 +256,7 @@ class EntrainementDaoTest {
         val plusTard = t0.plusSeconds(86_400)
 
         dao.renommerExercice(exercice.id, "  Tirage vertical ")
-        dao.modifierSerie(s1!!.serie.id, listOf(ValeursPalier(41.25, 14)), plusTard)
+        dao.modifierSerie(s1!!.serie.id, listOf(ValeursPalier(41.25, 14)), plusTard, echec = false)
         val ajout = dao.ajouterSerie(exercice.id, listOf(ValeursPalier(null, 20)), plusTard)
 
         assertEquals(2, ajout.serie.ordre)
@@ -393,11 +393,11 @@ class EntrainementDaoTest {
         dao.terminer(id, t0)
         val plusTard = t0.plusSeconds(60)
 
-        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6)), plusTard)
+        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6)), plusTard, echec = false)
         assertEquals(listOf("1.Tirage: 1/45.0×10↓30.0×8↓null×6"), resume(id))
         assertEquals(plusTard, exercices(id).single().series.single().serie.modifieLe)
 
-        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(40.0, 12)), plusTard)
+        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(40.0, 12)), plusTard, echec = false)
         assertEquals(listOf("1.Tirage: 1/40.0×12"), resume(id))
         assertEquals(listOf(1), exercices(id).single().series.single().paliers.map { it.ordre })
 
@@ -677,5 +677,63 @@ class EntrainementDaoTest {
 
         dao.terminer(id, t0)
         assertNull(dao.observerEnCoursComplet().first())
+    }
+
+
+    // --- Marqueur « à l'échec » (DECISIONS.md) ---
+
+    /** Marqueur de chaque série, exercice par exercice. */
+    private suspend fun echecs(id: Long) = exercices(id).map { e -> e.series.map { it.serie.echec } }
+
+    @Test
+    fun `serie a l'echec, degressive comprise, lue dans l'historique de l'exercice`() = runTest {
+        val passe = creer(lundi.minusDays(7))
+        serie(passe, nom = "Tirage", poids = 40.0, reps = 10)
+        assertTrue(checkNotNull(dao.enregistrerSerie(passe, "", 40.0, 10, Suite.NouvelleSerie, t0, 0, echec = true)).serie.echec)
+        dao.ajouterPalierEnCours(passe, "", 45.0, 8)
+        dao.enregistrerSerie(passe, "", 30.0, 6, Suite.NouvelleSerie, t0, 0, echec = true)
+        dao.enregistrerSerieEtTerminer(passe, "", 25.0, 10, t0, 0, echec = true)
+        assertEquals(listOf(listOf(false, true, true, true)), echecs(passe))
+
+        val lignes = dao.lireHistoriqueExercice(creer(), "Tirage")
+        // Une ligne par palier : le marqueur de la série est répété sur chacun.
+        assertEquals(listOf(false, true, true, true, true), lignes.map { it.echec })
+    }
+
+    @Test
+    fun `modifier une serie change son marqueur, ajouter une serie le pose`() = runTest {
+        val id = creer()
+        val serie = checkNotNull(serie(id, nom = "Squat"))
+        dao.terminer(id, t0)
+        val exercice = exercices(id).single().exercice.id
+
+        dao.modifierSerie(serie.serie.id, listOf(ValeursPalier(40.0, 10)), t0, echec = true)
+        dao.ajouterSerie(exercice, listOf(ValeursPalier(40.0, 8)), t0, echec = true)
+        assertEquals(listOf(listOf(true, true)), echecs(id))
+        dao.modifierSerie(serie.serie.id, listOf(ValeursPalier(40.0, 10)), t0, echec = false)
+        assertEquals(listOf(listOf(false, true)), echecs(id))
+    }
+
+    @Test
+    fun `superset, marqueur par onglet, memorise puis efface avec les valeurs du tour`() = runTest {
+        val id = creer()
+        val superset = checkNotNull(dao.commencerSuperset(id, "Élévations", "s1"))
+        dao.memoriserSuperset(superset.copy(nomB = "Curl", echecB = true))
+        assertEquals(superset.copy(nomB = "Curl", echecB = true), dao.lireEnCoursComplet()?.superset)
+
+        dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), SaisieOnglet("Curl", 12.0, 12, echec = true), false, t0, 0)
+        // Après le tour, les cases sont décochées avec les valeurs saisies.
+        assertEquals(SupersetEnCours(id, "s1", nomA = "Élévations", nomB = "Curl"), dao.lireEnCoursComplet()?.superset)
+        dao.enregistrerTour(id, SaisieOnglet("", 8.0, 12, echec = true), onglet("", 12.0, 10), true, t0, 0)
+        assertEquals(listOf(listOf(false, true), listOf(true, false)), echecs(id))
+    }
+
+    @Test
+    fun `tour ecrit depuis le detail avec son marqueur, un bloc ignore garde le sien`() = runTest {
+        val (id, a, b) = supersetTermine()
+        dao.ecrireTour(a, b, 1, listOf(ValeursPalier(8.0, 15)), listOf(ValeursPalier(12.0, 12)), t0, echecA = true, echecB = true)
+        dao.ecrireTour(a, b, 1, null, listOf(ValeursPalier(12.0, 12)), t0, echecB = false)
+        assertEquals(4, dao.ecrireTour(a, b, null, listOf(ValeursPalier(6.0, 10)), null, t0, echecA = true))
+        assertEquals(listOf(listOf(true, false, false, true), listOf(false, false, false)), echecs(id))
     }
 }

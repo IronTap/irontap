@@ -26,7 +26,13 @@ class ImportTest {
 
     private fun s(ordre: Int, vararg paliers: Pair<Double?, Int>) = SerieImportee(ordre, paliers.map { (p, r) -> ValeursPalier(p, r) })
 
-    /** Deux séances le même jour au même libellé ; superset dont B saute le tour 2, dégressive sur A ; champs à échapper. */
+    /** Série à l'échec. */
+    private fun e(ordre: Int, vararg paliers: Pair<Double?, Int>) = s(ordre, *paliers).copy(echec = true)
+
+    /**
+     * Deux séances le même jour au même libellé ; superset dont B saute le tour 2, dégressive à l'échec sur A ; champs à
+     * échapper ; série à l'échec au poids du corps.
+     */
     private val historique = listOf(
         EntrainementComplet(
             Entrainement(1, LocalDate.of(2026, 10, 15), "Épaules ; bras", t0, termineLe = t0),
@@ -34,13 +40,13 @@ class ImportTest {
                 ExerciceAvecSeries(Exercice(1, 1, "=Développé \"militaire\"", 1), listOf(serieDeTest(1, 1, 1, 32.5, 10, t0))),
                 ExerciceAvecSeries(
                     Exercice(2, 1, "Élévations latérales", 2, "s1", RoleSuperset.A),
-                    listOf(serieDeTest(2, 2, 1, 8.0, 15, t0), serieDeTest(3, 2, 2, 8.0, 12, t0), serieDeTest(4, 2, 3, 6.0, 12, t0, 4.0 to 10)),
+                    listOf(serieDeTest(2, 2, 1, 8.0, 15, t0), serieDeTest(3, 2, 2, 8.0, 12, t0), serieDeTest(4, 2, 3, 6.0, 12, t0, 4.0 to 10, echec = true)),
                 ),
                 ExerciceAvecSeries(
                     Exercice(3, 1, "'Curl' marteau", 3, "s1", RoleSuperset.B),
                     listOf(serieDeTest(5, 3, 1, 12.0, 12, t0), serieDeTest(6, 3, 3, 12.0, 10, t0)),
                 ),
-                ExerciceAvecSeries(Exercice(4, 1, "Tractions", 4), listOf(serieDeTest(7, 4, 1, null, 8, t0), serieDeTest(8, 4, 2, 41.25, 6, t0))),
+                ExerciceAvecSeries(Exercice(4, 1, "Tractions", 4), listOf(serieDeTest(7, 4, 1, null, 8, t0, echec = true), serieDeTest(8, 4, 2, 41.25, 6, t0))),
             ),
         ),
         EntrainementComplet(
@@ -66,9 +72,9 @@ class ImportTest {
         val epaules = entrainements[0]
         assertEquals(
             listOf(
-                ExerciceImporte("Développé militaire", listOf(s(1, 30.0 to 10), s(2, 32.5 to 8))),
-                ExerciceImporte("Élévations latérales", listOf(s(1, 8.0 to 15), s(2, 8.0 to 12), s(3, 6.0 to 12, 4.0 to 10)), 1, RoleSuperset.A),
-                ExerciceImporte("Curl marteau", listOf(s(1, 12.0 to 12), s(3, 12.0 to 10)), 1, RoleSuperset.B),
+                ExerciceImporte("Développé militaire", listOf(s(1, 30.0 to 10), e(2, 32.5 to 8))),
+                ExerciceImporte("Élévations latérales", listOf(s(1, 8.0 to 15), s(2, 8.0 to 12), e(3, 6.0 to 12, 4.0 to 10)), 1, RoleSuperset.A),
+                ExerciceImporte("Curl marteau", listOf(s(1, 12.0 to 12), e(3, 12.0 to 10)), 1, RoleSuperset.B),
                 ExerciceImporte("Oiseau", listOf(s(1, 6.0 to 12), s(2, 6.0 to 10))),
             ),
             epaules.exercices,
@@ -182,5 +188,25 @@ class ImportTest {
         assertEquals(listOf(b) to 1, ecarterDoublons(listOf(a, b), listOf(a)))
         assertEquals(listOf(a) to 1, ecarterDoublons(listOf(a, a), listOf(a)))
         assertEquals(emptyList<EntrainementImporte>() to 2, ecarterDoublons(listOf(a, a), listOf(a, a)))
+        // Le marqueur « à l'échec » n'en fait pas un autre entraînement.
+        val marque = a.copy(exercices = listOf(ExerciceImporte("Squat", listOf(e(1, 100.0 to 5)))))
+        assertEquals(emptyList<EntrainementImporte>() to 1, ecarterDoublons(listOf(marque), listOf(a)))
+        assertEquals(emptyList<EntrainementImporte>() to 1, ecarterDoublons(listOf(a), listOf(marque)))
+    }
+
+    @Test
+    fun `marqueur a l'echec, 1 ou vide, une serie l'est si l'une de ses lignes l'est`() {
+        val entete = "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;echec\n"
+        val contenu = entete +
+            "2026-10-12;;Curl;1;1;1;12;10;\n" +
+            "2026-10-12;;Curl;1;2;1;12;8;1\n" +
+            "2026-10-12;;Curl;1;3;1;12;6;0\n" +
+            "2026-10-12;;Curl;1;4;1;12;6;\n" +
+            "2026-10-12;;Curl;1;4;2;8;6;1\n"
+        assertEquals(
+            listOf(s(1, 12.0 to 10), e(2, 12.0 to 8), s(3, 12.0 to 6), e(4, 12.0 to 6, 8.0 to 6)),
+            valide(contenu).single().exercices.single().series,
+        )
+        assertEquals(listOf("Ligne 2 : échec « oui » invalide (1 ou vide)"), erreurs(entete + "2026-10-12;;Curl;1;1;1;12;10;oui\n"))
     }
 }

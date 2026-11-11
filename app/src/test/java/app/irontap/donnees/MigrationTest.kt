@@ -19,7 +19,8 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * Migrations v1 → v2 (séries dégressives) et v2 → v3 (supersets) : une base est créée avec le schéma exporté de sa
+ * Migrations v1 → v2 (séries dégressives), v2 → v3 (supersets) et v3 → v4 (marqueur « à l'échec ») : une base est
+ * créée avec le schéma exporté de sa
  * version (`schemas/…/N.json`), puis ouverte par Room, qui applique les migrations et vérifie que le résultat est
  * exactement le schéma courant.
  */
@@ -64,7 +65,7 @@ class MigrationTest {
 
     private fun ouvrir(): EntrainementDao =
         Room.databaseBuilder(context, BaseIronTap::class.java, fichier.name)
-            .addMigrations(Migration1Vers2, Migration2Vers3)
+            .addMigrations(Migration1Vers2, Migration2Vers3, Migration3Vers4)
             .allowMainThreadQueries()
             .build()
             .also { base = it }
@@ -145,5 +146,32 @@ class MigrationTest {
         // Un superset peut ensuite commencer sur un nouvel exercice.
         dao.enregistrerSerie(2, "", null, 6, EntrainementDao.Suite.NouvelExercice, Instant.ofEpochMilli(4000), 1000)
         assertTrue(dao.commencerSuperset(2, "Curl", "s1") != null)
+    }
+
+    @Test
+    fun `v3 vers v4, aucune serie a l'echec et le superset en cours conserve`() = runTest {
+        creer(3) {
+            execSQL("INSERT INTO entrainement VALUES (1, '2026-10-12', NULL, 1000, 2000, 0)")
+            execSQL("INSERT INTO entrainement VALUES (2, '2026-10-14', NULL, 3000, NULL, 0)")
+            execSQL("INSERT INTO exercice VALUES (10, 1, 'Tirage vertical', 1, NULL, NULL)")
+            execSQL("INSERT INTO serie VALUES (100, 10, 1, 1100, NULL)")
+            execSQL("INSERT INTO palier VALUES (1, 100, 1, 45.0, 10)")
+            execSQL("INSERT INTO superset_en_cours VALUES (2, 's1', 'Élévations', 'Curl', 'B', '8', '15', '12', '')")
+            execSQL("INSERT INTO etat_chrono VALUES (2, 'EnCours', 900, 0)")
+        }
+        val dao = ouvrir()
+
+        val serie = checkNotNull(dao.lireComplet(1)).exercices.single().series.single().serie
+        assertEquals(Serie(100, 10, 1, Instant.ofEpochMilli(1100), null, echec = false), serie)
+        val superset = checkNotNull(dao.observerEnCoursComplet().first()?.superset)
+        assertEquals(
+            SupersetEnCours(2, "s1", "Élévations", "Curl", RoleSuperset.B, "8", "15", "12", "", echecA = false, echecB = false),
+            superset,
+        )
+        // Le marqueur s'écrit ensuite normalement.
+        dao.modifierSerie(100, listOf(ValeursPalier(45.0, 10)), Instant.ofEpochMilli(4000), echec = true)
+        assertTrue(checkNotNull(dao.lireComplet(1)).exercices.single().series.single().serie.echec)
+        dao.memoriserSuperset(superset.copy(echecB = true))
+        assertEquals(true, dao.observerEnCoursComplet().first()?.superset?.echecB)
     }
 }

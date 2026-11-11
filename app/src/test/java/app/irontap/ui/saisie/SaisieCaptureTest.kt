@@ -6,6 +6,9 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
@@ -80,6 +83,7 @@ class SaisieCaptureTest {
         override fun choisir(suggestion: Suggestion) = Unit
         override fun ajouterAuPoids(valeur: Int) = Unit
         override fun ajouterAuxRepetitions(valeur: Int) = Unit
+        override fun basculerEchec() = Unit
         override fun enregistrer(suite: Suite) = Unit
         override fun degressive() = Unit
         override fun demanderFin() = Unit
@@ -110,6 +114,7 @@ class SaisieCaptureTest {
         paliersEnCours: List<PalierEnCours> = emptyList(),
         superset: SupersetEnCours? = null,
         onglets: OngletsSuperset? = null,
+        echec: Boolean = false,
     ) {
         compose.setContent {
             IronTapTheme {
@@ -125,6 +130,7 @@ class SaisieCaptureTest {
                         realtime = { 72_000 },
                         actions = actions,
                         onglets = onglets,
+                        echec = echec,
                     )
                 }
             }
@@ -394,7 +400,8 @@ class SaisieCaptureTest {
         ExerciceAvecSeries(Exercice(4, 1, "Curl marteau", 4, "s1", RoleSuperset.B), listOf(serieDeTest(4, 4, 1, 12.0, 12, t0))),
     )
 
-    private fun supersetB(formulaire: Formulaire = Formulaire()) = afficher(
+    private fun supersetB(formulaire: Formulaire = Formulaire(), echec: Boolean = false) = afficher(
+        echec = echec,
         exercices = supersetTour2,
         entrainement = epaules.copy(nouvelExercice = false),
         chrono = EtatChrono(1, Etat.EnCours, demarreA = 72_000 - 4_000),
@@ -452,6 +459,76 @@ class SaisieCaptureTest {
         supersetB(Formulaire(dialogue = DialogueFin.SupersetIncomplet(RoleSuperset.A, SaisieOnglet("", 8.0, 12), "8 kg × 12")))
         compose.waitForIdle()
         compose.onNode(hasText("Enregistrer A seul et terminer")).assertIsDisplayed()
+        captureScreenRoboImage()
+    }
+
+    // --- Case « à l'échec » (DECISIONS.md) ---
+
+    /** Série 3 du tirage : 45 kg × 10 saisis, case cochée à droite des répétitions, carrée à la hauteur du champ. */
+    @Test
+    fun caseEchec() {
+        var appuis = 0
+        afficher(
+            exercices = listOf(developpe, tirageSerie3),
+            poids = "45",
+            repetitions = "10",
+            echec = true,
+            actions = object : SansAction() {
+                override fun basculerEchec() { appuis++ }
+            },
+        )
+        compose.onNode(hasContentDescription("À l’échec"))
+            .assertIsOn()
+            .assertWidthIsEqualTo(62.dp)
+            .assertHeightIsEqualTo(62.dp)
+        compose.onRoot().captureRoboImage()
+        compose.onNode(hasContentDescription("À l’échec")).performClick()
+        assertEquals(1, appuis)
+    }
+
+    /** Case décochée, la plupart du temps. */
+    @Test
+    fun caseEchecDecochee() {
+        afficher(exercices = listOf(developpe, tirageSerie3), poids = "45", repetitions = "10")
+        compose.onNode(hasContentDescription("À l’échec")).assertIsOff()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** Superset : la case suit l'onglet actif. */
+    @Test
+    fun caseEchecSuperset() {
+        supersetB(echec = true)
+        compose.onNode(hasContentDescription("À l’échec, exercice B")).assertIsOn()
+        compose.onRoot().captureRoboImage()
+    }
+
+    /** 3g : batterie vide après les séries à l'échec, dégressive comprise. */
+    @Test
+    fun historiqueEchec() {
+        val seances = listOf(
+            SeanceHistorique(
+                "Dos / biceps — 12/10/2026",
+                listOf(
+                    LigneHistorique("10 × 10 kg"),
+                    LigneHistorique("6 × 20 kg"),
+                    LigneHistorique("10 × 25 kg"),
+                    LigneHistorique("10 × 25 kg"),
+                    LigneHistorique("10 × 25 kg", echec = true),
+                ),
+            ),
+            SeanceHistorique(
+                "Dos / biceps — 05/10/2026",
+                listOf(LigneHistorique("10 × 25 kg", echec = true), LigneHistorique("8 × 25 kg", listOf("6 × 15 kg"), echec = true)),
+            ),
+        )
+        afficher(
+            exercices = listOf(developpe, tirageSerie3),
+            historiqueDisponible = true,
+            formulaire = Formulaire(historique = HistoriqueExercice("Tirage vertical", seances)),
+        )
+        compose.waitForIdle()
+        // Trois repères dans la popup, et la case de l'écran dessous.
+        compose.onAllNodes(hasContentDescription("À l’échec"), useUnmergedTree = true).assertCountEquals(4)
         captureScreenRoboImage()
     }
 }
