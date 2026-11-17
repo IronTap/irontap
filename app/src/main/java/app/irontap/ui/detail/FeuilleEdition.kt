@@ -40,18 +40,21 @@ import androidx.compose.ui.unit.dp
 import app.irontap.R
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.SerieAvecPaliers
+import app.irontap.logique.lireRir
 import app.irontap.ui.composants.BoutonPrincipal
 import app.irontap.ui.composants.BoutonRond
 import app.irontap.ui.composants.BoutonTexte
-import app.irontap.ui.composants.CaseEchec
 import app.irontap.ui.composants.ChampPalier
 import app.irontap.ui.composants.ChampPoids
 import app.irontap.ui.composants.ChampRepetitions
 import app.irontap.ui.composants.FeuilleNocturne
 import app.irontap.ui.composants.Icone
+import app.irontap.ui.composants.LIBELLE_RIR
 import app.irontap.ui.composants.LibelleChamp
 import app.irontap.ui.composants.MessageErreur
+import app.irontap.ui.composants.PastillesRir
 import app.irontap.ui.composants.RangeeAjouts
+import app.irontap.ui.composants.TypeChampPalier
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Formes
 import app.irontap.ui.theme.Typo
@@ -60,8 +63,8 @@ interface ActionsEdition {
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
 
-    /** Case « à l'échec » de la série. */
-    fun basculerEchec()
+    /** Pastilles du RIR de l'écran 7 : la valeur choisie, ou `null` pour l'effacer. */
+    fun choisirRir(rir: Int?)
 
     /** « + Ajouter un palier » : retourne la clé de la nouvelle ligne, qui prend le focus. */
     fun ajouterPalier(): Long
@@ -76,8 +79,8 @@ private val AjoutsRepetitions = listOf(1, 2, 5, 10)
 
 /**
  * Édition d'une série en feuille du bas, au-dessus du détail : écran 7 pour une série simple (champs et
- * boutons +X), tableau des paliers 7·D pour une dégressive (spec §4.5.1), avec la case « à l'échec » à droite des
- * répétitions (du palier principal dans le tableau). Affichée tant que [edition]
+ * boutons +X, pastilles du RIR), tableau des paliers 7·D pour une dégressive (spec §4.5.1), avec un RIR au bout de chaque
+ * ligne. Affichée tant que [edition]
  * n'est pas `null` ; quand elle le redevient (enregistrement, suppression), la feuille se referme avec son
  * animation. [paliersEnErreur] : clés des paliers dont les répétitions manquent.
  */
@@ -127,8 +130,6 @@ fun FeuilleEdition(
         if (contenu.tableau) {
             TableauPaliers(
                 paliers = paliers,
-                echec = contenu.echec,
-                onBasculerEchec = actions::basculerEchec,
                 paliersEnErreur = paliersEnErreur,
                 aFocaliser = aFocaliser,
                 onFocalise = { aFocaliser = null },
@@ -148,12 +149,11 @@ fun FeuilleEdition(
             ChampPoids(palier.poids, fond = Couleurs.Fond)
             RangeeAjouts(AjoutsPoids, actions::ajouterAuPoids, fond = Couleurs.Fond)
             LibelleChamp("Nombre de répétitions", Modifier.padding(top = 14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChampRepetitions(palier.repetitions, erreur = enErreur, modifier = Modifier.weight(1f), fond = Couleurs.Fond)
-                CaseEchec(coche = contenu.echec, onBasculer = actions::basculerEchec, taille = 62.dp, fond = Couleurs.Fond)
-            }
+            ChampRepetitions(palier.repetitions, erreur = enErreur, fond = Couleurs.Fond)
             RangeeAjouts(AjoutsRepetitions, actions::ajouterAuxRepetitions, fond = Couleurs.Fond)
             if (enErreur) MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 6.dp))
+            LibelleChamp(LIBELLE_RIR, Modifier.padding(top = 14.dp))
+            PastillesRir(lireRir(palier.rir.text.toString()), actions::choisirRir, fond = Couleurs.Fond)
             // Passage en dégressive : la feuille bascule vers le tableau (spec §4.5.1).
             BoutonTexte(
                 texte = "Ajouter un palier",
@@ -200,22 +200,20 @@ fun FeuilleEdition(
 
 /**
  * 7·D : une ligne de 64 dp par palier sur fond `bg`, rayon 14, filets couleur surface ; repère « 1 » ou ↓,
- * poids × répétitions au clavier numérique, case « à l'échec » de la série sur le palier principal, ✕ sur les paliers
- * dégressifs ; « + Ajouter un palier » en bas. « Suivant » du clavier enchaîne poids → répétitions → poids du palier suivant.
+ * poids × répétitions puis RIR (facultatif) au clavier numérique, ✕ sur les paliers dégressifs ; « + Ajouter un palier »
+ * en bas. « Suivant » du clavier enchaîne poids → répétitions → RIR → poids du palier suivant.
  */
 @Composable
 private fun TableauPaliers(
     paliers: List<ChampsPalier>,
-    echec: Boolean,
-    onBasculerEchec: () -> Unit,
     paliersEnErreur: Set<Long>,
     aFocaliser: Long?,
     onFocalise: () -> Unit,
     onAjouter: () -> Unit,
     onRetirer: (Long) -> Unit,
 ) {
-    val focus = remember { HashMap<Long, Pair<FocusRequester, FocusRequester>>() }
-    fun demandes(cle: Long) = focus.getOrPut(cle) { FocusRequester() to FocusRequester() }
+    val focus = remember { HashMap<Long, Triple<FocusRequester, FocusRequester, FocusRequester>>() }
+    fun demandes(cle: Long) = focus.getOrPut(cle) { Triple(FocusRequester(), FocusRequester(), FocusRequester()) }
     LaunchedEffect(aFocaliser) {
         if (aFocaliser != null) {
             demandes(aFocaliser).first.requestFocus()
@@ -232,7 +230,7 @@ private fun TableauPaliers(
     ) {
         paliers.forEachIndexed { index, palier ->
             key(palier.cle) {
-                val (poids, repetitions) = demandes(palier.cle)
+                val (poids, repetitions, rir) = demandes(palier.cle)
                 val suivant = paliers.getOrNull(index + 1)
                 LignePalier(
                     numero = index + 1,
@@ -240,12 +238,12 @@ private fun TableauPaliers(
                     erreur = palier.cle in paliersEnErreur,
                     focusPoids = poids,
                     focusRepetitions = repetitions,
+                    focusRir = rir,
                     dernier = suivant == null,
                     versRepetitions = { repetitions.requestFocus() },
+                    versRir = { rir.requestFocus() },
                     versSuivant = { if (suivant != null) demandes(suivant.cle).first.requestFocus() else focusManager.clearFocus() },
                     onRetirer = { onRetirer(palier.cle) },
-                    echec = echec,
-                    onBasculerEchec = onBasculerEchec,
                 )
             }
         }
@@ -260,12 +258,12 @@ private fun LignePalier(
     erreur: Boolean,
     focusPoids: FocusRequester,
     focusRepetitions: FocusRequester,
+    focusRir: FocusRequester,
     dernier: Boolean,
     versRepetitions: () -> Unit,
+    versRir: () -> Unit,
     versSuivant: () -> Unit,
     onRetirer: () -> Unit,
-    echec: Boolean,
-    onBasculerEchec: () -> Unit,
 ) {
     val principal = numero == 1
     Row(
@@ -278,7 +276,8 @@ private fun LignePalier(
             }
             .padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // 6 dp : poids, répétitions, RIR et ✕ tiennent sur 360 dp de large.
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
             if (principal) {
@@ -289,8 +288,8 @@ private fun LignePalier(
         }
         ChampPalier(
             etat = palier.poids,
-            poids = true,
-            largeur = 100.dp,
+            type = TypeChampPalier.Poids,
+            largeur = 92.dp,
             description = "Poids du palier $numero",
             modifier = Modifier.focusRequester(focusPoids),
             onSuivant = KeyboardActionHandler { versRepetitions() },
@@ -298,27 +297,35 @@ private fun LignePalier(
         Text("×", style = Typo.Suggestion, color = Couleurs.Neutre500)
         ChampPalier(
             etat = palier.repetitions,
-            poids = false,
-            largeur = 68.dp,
+            type = TypeChampPalier.Repetitions,
+            largeur = 60.dp,
             description = "Répétitions du palier $numero",
             modifier = Modifier.focusRequester(focusRepetitions),
             erreur = erreur,
+            onSuivant = KeyboardActionHandler { versRir() },
+        )
+        ChampPalier(
+            etat = palier.rir,
+            type = TypeChampPalier.Rir,
+            largeur = 48.dp,
+            description = "RIR du palier $numero",
+            modifier = Modifier.focusRequester(focusRir),
             imeAction = if (dernier) ImeAction.Done else ImeAction.Next,
             onSuivant = KeyboardActionHandler { versSuivant() },
+            indication = "RIR",
         )
-        Spacer(Modifier.weight(1f))
-        if (principal) {
-            // Le palier principal ne se retire pas (« Supprimer la série » retire tout) : sa place porte la case de la série.
-            CaseEchec(coche = echec, onBasculer = onBasculerEchec, taille = 48.dp, forme = Formes.Moyenne, tailleIcone = 22.dp)
-        } else {
-            BoutonRond(
-                onClick = onRetirer,
-                taille = 48.dp,
-                fond = Color.Transparent,
-                fondAppuye = Couleurs.Neutre800,
-                bordure = Color.Transparent,
-                description = "Retirer ce palier",
-            ) { Icone(R.drawable.ic_x, taille = 18.dp, couleur = Couleurs.Neutre500) }
+        // Le palier principal ne se retire pas (« Supprimer la série » retire tout) : sa place reste vide.
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            if (!principal) {
+                BoutonRond(
+                    onClick = onRetirer,
+                    taille = 48.dp,
+                    fond = Color.Transparent,
+                    fondAppuye = Couleurs.Neutre800,
+                    bordure = Color.Transparent,
+                    description = "Retirer ce palier",
+                ) { Icone(R.drawable.ic_x, taille = 18.dp, couleur = Couleurs.Neutre500) }
+            }
         }
     }
 }

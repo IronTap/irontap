@@ -6,6 +6,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import app.irontap.logique.EntrainementImporte
+import app.irontap.logique.RIR_MAX
 import app.irontap.logique.ecarterDoublons
 import app.irontap.logique.normaliserNom
 import app.irontap.logique.versImport
@@ -138,8 +139,8 @@ abstract class EntrainementDao {
 
     /**
      * Enregistre une série de l'entraînement en cours et relance le chrono. Ses paliers sont ceux gardés par
-     * « Dégressive » (spec §4.3.9), puis le palier courant [poidsKg] × [repetitions] ; [repetitions] `null` :
-     * pas de palier courant (dialogue 4a, dégressive en attente et champs vides). [echec] : série à l'échec.
+     * « Dégressive » (spec §4.3.9), puis le palier courant [poidsKg] × [repetitions], avec son [rir] ; [repetitions]
+     * `null` : pas de palier courant (dialogue 4a, dégressive en attente et champs vides).
      * La série ouvre un nouvel exercice nommé [nomExercice] si c'est la première de l'entraînement
      * ou si la précédente a été suivie de « Nouvel exercice » ; sinon [nomExercice] est ignoré
      * (nom verrouillé). Retourne la série enregistrée, avec son numéro, ou `null` sans rien enregistrer
@@ -155,13 +156,13 @@ abstract class EntrainementDao {
         suite: Suite,
         maintenant: Instant,
         realtime: Long,
-        echec: Boolean = false,
+        rir: Int? = null,
     ): SerieAvecPaliers? {
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
-        val paliers = paliersGardes(entrainementId, role = null) + listOfNotNull(repetitions?.let { ValeursPalier(poidsKg, it) })
+        val paliers = paliersGardes(entrainementId, role = null) + listOfNotNull(repetitions?.let { ValeursPalier(poidsKg, it, rir) })
         if (paliers.isEmpty()) return null
         val exerciceId = exerciceCourant(entrainement, nomExercice) ?: return null
-        val serie = ajouterSerie(exerciceId, paliers, maintenant, echec = echec)
+        val serie = ajouterSerie(exerciceId, paliers, maintenant)
         supprimerPaliersEnCours(entrainementId, role = null)
         modifierNouvelExercice(entrainementId, suite == Suite.NouvelExercice)
         enregistrer((lireChrono(entrainementId) ?: EtatChrono(entrainementId)).relance(realtime))
@@ -169,7 +170,7 @@ abstract class EntrainementDao {
     }
 
     /**
-     * « Dégressive » (spec §4.3.9) : garde le palier [poidsKg] × [repetitions] pour la série en cours, sans
+     * « Dégressive » (spec §4.3.9) : garde le palier [poidsKg] × [repetitions], avec son [rir], pour la série en cours, sans
      * toucher au chrono ni au numéro de série. Le nom se verrouille : un nouvel exercice est ouvert dès ce
      * premier palier, comme le ferait [enregistrerSerie]. Dans un superset ([role]), le palier est gardé pour
      * cet onglet et son nom mémorisé ; l'exercice ne sera créé qu'avec le tour, après A s'il s'agit de B.
@@ -183,8 +184,9 @@ abstract class EntrainementDao {
         poidsKg: Double?,
         repetitions: Int,
         role: RoleSuperset? = null,
+        rir: Int? = null,
     ): PalierEnCours? {
-        verifier(ValeursPalier(poidsKg, repetitions))
+        verifier(ValeursPalier(poidsKg, repetitions, rir))
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
         if (role == null) {
             exerciceCourant(entrainement, nomExercice) ?: return null
@@ -202,6 +204,7 @@ abstract class EntrainementDao {
             poidsKg = poidsKg,
             repetitions = repetitions,
             role = role,
+            rir = rir,
         )
         return palier.copy(id = inserer(palier))
     }
@@ -236,9 +239,9 @@ abstract class EntrainementDao {
         repetitions: Int?,
         maintenant: Instant,
         realtime: Long,
-        echec: Boolean = false,
+        rir: Int? = null,
     ) {
-        enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, Suite.NouvelleSerie, maintenant, realtime, echec)
+        enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, Suite.NouvelleSerie, maintenant, realtime, rir)
         terminer(entrainementId, maintenant)
     }
 
@@ -301,22 +304,21 @@ abstract class EntrainementDao {
         val existants = lireExercicesSuperset(superset.supersetId).associateBy { it.supersetRole }
         // Tout est vérifié avant la première écriture.
         val aEnregistrer = saisies.map { (role, saisie) ->
-            val paliers = paliersGardes(entrainementId, role) + listOfNotNull(saisie.repetitions?.let { ValeursPalier(saisie.poidsKg, it) })
+            val paliers = paliersGardes(entrainementId, role) + listOfNotNull(saisie.repetitions?.let { ValeursPalier(saisie.poidsKg, it, saisie.rir) })
             if (paliers.isEmpty()) return null
             paliers.forEach(::verifier)
             val nom = saisie.nom.trim().ifEmpty { superset.nom(role).trim() }
             if (existants[role] == null && nom.isEmpty()) return null
-            Triple(role, nom, paliers to saisie.echec)
+            Triple(role, nom, paliers)
         }
         val tour = (lireDernierTourSuperset(superset.supersetId) ?: 0) + 1
         var dernierOrdre = lireDernierExercice(entrainementId)?.ordre ?: 0
         val series = LinkedHashMap<RoleSuperset, SerieAvecPaliers>()
-        for ((role, nom, serie) in aEnregistrer) {
-            val (paliers, echec) = serie
+        for ((role, nom, paliers) in aEnregistrer) {
             val exerciceId = existants[role]?.id ?: inserer(
                 Exercice(entrainementId = entrainementId, nom = nom, ordre = ++dernierOrdre, supersetId = superset.supersetId, supersetRole = role),
             )
-            series[role] = ajouterSerie(exerciceId, paliers, maintenant, ordre = tour, echec = echec)
+            series[role] = ajouterSerie(exerciceId, paliers, maintenant, ordre = tour)
             supprimerPaliersEnCours(entrainementId, role)
         }
         if (series.isNotEmpty()) enregistrer((lireChrono(entrainementId) ?: EtatChrono(entrainementId)).relance(realtime))
@@ -343,10 +345,10 @@ abstract class EntrainementDao {
         suite: Suite,
         maintenant: Instant,
         realtime: Long,
-        echec: Boolean = false,
+        rir: Int? = null,
     ): Annulable<SerieAvecPaliers>? {
         val avant = etatAvant(entrainementId) ?: return null
-        val serie = enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, suite, maintenant, realtime, echec) ?: return null
+        val serie = enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, suite, maintenant, realtime, rir) ?: return null
         return Annulable(serie, avant.apres(listOf(serie.serie.id)))
     }
 
@@ -418,17 +420,17 @@ abstract class EntrainementDao {
         terminer(entrainementId, maintenant)
     }
 
-    /** Mémorise noms, onglet actif, valeurs saisies et marqueurs « à l'échec » ; sans effet si ce superset s'est terminé entre-temps. */
+    /** Mémorise noms, onglet actif, valeurs saisies et RIR choisis ; sans effet si ce superset s'est terminé entre-temps. */
     suspend fun memoriserSuperset(superset: SupersetEnCours) = with(superset) {
         memoriserSupersetBrut(
-            entrainementId, supersetId, nomA, nomB, actif, poidsA, repetitionsA, poidsB, repetitionsB, echecA, echecB,
+            entrainementId, supersetId, nomA, nomB, actif, poidsA, repetitionsA, poidsB, repetitionsB, rirA, rirB,
         )
     }
 
     /**
      * Détail (maquette 3·S+ T1) : écrit le tour [tour] du superset de [exerciceA] et [exerciceB] (un nouveau tour
      * après le dernier si `null`). Pour chaque exercice, [a] ou [b] remplace les paliers de sa série de ce tour, ou
-     * la crée s'il n'en a pas, avec son marqueur [echecA] ou [echecB] ; `null` : rien pour cet exercice. Retourne le
+     * la crée s'il n'en a pas ; `null` : rien pour cet exercice. Retourne le
      * numéro du tour, ou `null` sans rien écrire si A et B ne forment plus ce superset (l'un supprimé entre-temps).
      */
     @Transaction
@@ -439,19 +441,17 @@ abstract class EntrainementDao {
         a: List<ValeursPalier>?,
         b: List<ValeursPalier>?,
         maintenant: Instant,
-        echecA: Boolean = false,
-        echecB: Boolean = false,
     ): Int? {
         val supersetId = lireExercice(exerciceA)?.supersetId ?: return null
         if (lirePartenaire(supersetId, exerciceA)?.id != exerciceB) return null
         val numero = tour ?: ((lireDernierTourSuperset(supersetId) ?: 0) + 1)
-        for ((exerciceId, paliers, echec) in listOf(Triple(exerciceA, a, echecA), Triple(exerciceB, b, echecB))) {
+        for ((exerciceId, paliers) in listOf(exerciceA to a, exerciceB to b)) {
             if (paliers == null) continue
             val existante = lireSerieTour(exerciceId, numero)
             if (existante != null) {
-                modifierSerie(existante.id, paliers, maintenant, echec)
+                modifierSerie(existante.id, paliers, maintenant)
             } else {
-                ajouterSerie(exerciceId, paliers, maintenant, ordre = numero, echec = echec)
+                ajouterSerie(exerciceId, paliers, maintenant, ordre = numero)
             }
         }
         return numero
@@ -486,7 +486,7 @@ abstract class EntrainementDao {
                         supersetRole = exercice.role,
                     ),
                 )
-                exercice.series.forEach { ajouterSerie(exerciceId, it.paliers, creeLe, ordre = it.ordre, echec = it.echec) }
+                exercice.series.forEach { ajouterSerie(exerciceId, it.paliers, creeLe, ordre = it.ordre) }
             }
         }
         return nouveaux.size
@@ -509,7 +509,7 @@ abstract class EntrainementDao {
 
     /**
      * Ajoute une série de [paliers] (au moins un, le principal d'abord) en dernière position de l'exercice, ou au
-     * numéro [ordre] (tour d'un superset où cet exercice n'a pas encore de série). [echec] : série à l'échec.
+     * numéro [ordre] (tour d'un superset où cet exercice n'a pas encore de série).
      */
     @Transaction
     open suspend fun ajouterSerie(
@@ -517,34 +517,34 @@ abstract class EntrainementDao {
         paliers: List<ValeursPalier>,
         maintenant: Instant,
         ordre: Int? = null,
-        echec: Boolean = false,
     ): SerieAvecPaliers {
         require(paliers.isNotEmpty()) { "Série sans palier" }
         paliers.forEach(::verifier)
-        val serie = Serie(exerciceId = exerciceId, ordre = ordre ?: ((lireDernierOrdre(exerciceId) ?: 0) + 1), creeLe = maintenant, echec = echec)
+        val serie = Serie(exerciceId = exerciceId, ordre = ordre ?: ((lireDernierOrdre(exerciceId) ?: 0) + 1), creeLe = maintenant)
         val enregistree = serie.copy(id = inserer(serie))
         return SerieAvecPaliers(enregistree, insererPaliers(enregistree.id, paliers))
     }
 
-    /** Remplace tous les paliers de la série (édition, spec §4.5 et §4.5.1) et son marqueur [echec], et renseigne `modifie_le`. */
+    /** Remplace tous les paliers de la série (édition, spec §4.5 et §4.5.1), RIR compris, et renseigne `modifie_le`. */
     @Transaction
-    open suspend fun modifierSerie(id: Long, paliers: List<ValeursPalier>, maintenant: Instant, echec: Boolean) {
+    open suspend fun modifierSerie(id: Long, paliers: List<ValeursPalier>, maintenant: Instant) {
         require(paliers.isNotEmpty()) { "Série sans palier" }
         paliers.forEach(::verifier)
         supprimerPaliers(id)
         insererPaliers(id, paliers)
-        marquerModifiee(id, maintenant, echec)
+        marquerModifiee(id, maintenant)
     }
 
     private suspend fun insererPaliers(serieId: Long, paliers: List<ValeursPalier>): List<Palier> =
         paliers.mapIndexed { index, valeurs ->
-            val palier = Palier(serieId = serieId, ordre = index + 1, poidsKg = valeurs.poidsKg, repetitions = valeurs.repetitions)
+            val palier = Palier(serieId = serieId, ordre = index + 1, poidsKg = valeurs.poidsKg, repetitions = valeurs.repetitions, rir = valeurs.rir)
             palier.copy(id = inserer(palier))
         }
 
     private fun verifier(palier: ValeursPalier) {
         require(palier.repetitions > 0) { "Répétitions : ${palier.repetitions}" }
         require(palier.poidsKg == null || palier.poidsKg >= 0) { "Poids : ${palier.poidsKg}" }
+        require(palier.rir == null || palier.rir in 0..RIR_MAX) { "RIR : ${palier.rir}" }
     }
 
     /**
@@ -631,7 +631,7 @@ abstract class EntrainementDao {
 
     @Query(
         """
-        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions, s.echec,
+        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions, p.rir,
         (SELECT y.nom FROM exercice y WHERE y.superset_id = x.superset_id AND y.id != x.id LIMIT 1) AS partenaire
         FROM palier p JOIN serie s ON s.id = p.serie_id JOIN exercice x ON x.id = s.exercice_id
         JOIN entrainement t ON t.id = x.entrainement_id
@@ -692,7 +692,7 @@ abstract class EntrainementDao {
     @Query(
         """
         UPDATE superset_en_cours SET nom_a = :nomA, nom_b = :nomB, actif = :actif, poids_a = :poidsA,
-        repetitions_a = :repetitionsA, poids_b = :poidsB, repetitions_b = :repetitionsB, echec_a = :echecA, echec_b = :echecB
+        repetitions_a = :repetitionsA, poids_b = :poidsB, repetitions_b = :repetitionsB, rir_a = :rirA, rir_b = :rirB
         WHERE entrainement_id = :entrainementId AND superset_id = :supersetId
         """,
     )
@@ -706,14 +706,14 @@ abstract class EntrainementDao {
         repetitionsA: String,
         poidsB: String,
         repetitionsB: String,
-        echecA: Boolean,
-        echecB: Boolean,
+        rirA: Int?,
+        rirB: Int?,
     )
 
     @Query(
         """
         UPDATE superset_en_cours SET actif = 'A', poids_a = '', repetitions_a = '', poids_b = '', repetitions_b = '',
-        echec_a = 0, echec_b = 0
+        rir_a = NULL, rir_b = NULL
         WHERE entrainement_id = :entrainementId
         """,
     )
@@ -764,8 +764,8 @@ abstract class EntrainementDao {
     @Query("DELETE FROM palier WHERE serie_id = :serieId")
     protected abstract suspend fun supprimerPaliers(serieId: Long)
 
-    @Query("UPDATE serie SET modifie_le = :maintenant, echec = :echec WHERE id = :id")
-    protected abstract suspend fun marquerModifiee(id: Long, maintenant: Instant, echec: Boolean)
+    @Query("UPDATE serie SET modifie_le = :maintenant WHERE id = :id")
+    protected abstract suspend fun marquerModifiee(id: Long, maintenant: Instant)
 
     @Upsert
     protected abstract suspend fun enregistrer(etat: EtatChrono)

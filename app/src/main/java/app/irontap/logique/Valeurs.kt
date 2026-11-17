@@ -10,6 +10,9 @@ const val POIDS_MAX_KG = 9999.75
 /** Répétitions maximales acceptées (3 chiffres). */
 const val REPETITIONS_MAX = 999
 
+/** RIR le plus haut enregistré : il se lit « 5+ », et toute valeur au-delà s'enregistre ainsi (DECISIONS.md). */
+const val RIR_MAX = 5
+
 /** Arrondi au 0,25 kg le plus proche (petits disques de 1,25 kg, spec §4.3.3). */
 fun arrondirPoids(kg: Double): Double = (kg * 4).roundToLong() / 4.0
 
@@ -22,6 +25,18 @@ fun lirePoids(texte: String): Double? =
 
 /** Nombre de répétitions saisi, `null` s'il est vide, illisible ou nul. */
 fun lireRepetitions(texte: String): Int? = texte.trim().toIntOrNull()?.takeIf { it in 1..REPETITIONS_MAX }
+
+/**
+ * RIR saisi au clavier : un entier positif ou nul, ramené à [RIR_MAX] au-delà (« 7 », « 12 » : 5+). « 5+ » se relit
+ * aussi. Vide ou illisible : `null`, pas de RIR.
+ */
+fun lireRir(texte: String): Int? = texte.trim().removeSuffix("+").toIntOrNull()?.takeIf { it >= 0 }?.coerceAtMost(RIR_MAX)
+
+/** « 2 », ou « 5+ » pour [RIR_MAX]. */
+fun formaterRir(rir: Int): String = if (rir >= RIR_MAX) "$RIR_MAX+" else rir.toString()
+
+/** « RIR 2 », « RIR 5+ ». */
+fun mentionRir(rir: Int): String = "RIR ${formaterRir(rir)}"
 
 /** Bouton +X du poids : ajoute à la valeur courante (vide = 0), arrondit au 0,25 et affiche avec virgule. */
 fun ajouterPoids(texte: String, ajout: Int): String =
@@ -39,16 +54,14 @@ fun formaterPoids(kg: Double): String =
 fun decrirePalier(poidsKg: Double?, repetitions: Int): String =
     (if (poidsKg != null) "${formaterPoids(poidsKg)} kg" else "PDC") + " × $repetitions"
 
-/** « 40 kg × 15 » ; une dégressive : « 50 kg × 10 ↓ 30 kg × 8 ↓ 20 kg × 6 » (toast, dialogues, export texte). */
-fun decrireSerie(paliers: List<ValeursPalier>): String =
-    paliers.joinToString(" ↓ ") { decrirePalier(it.poidsKg, it.repetitions) }
-
-/** [decrireSerie], suivi de « (à l’échec) » pour une série à l'échec (toast, export texte). */
-fun decrireSerie(paliers: List<ValeursPalier>, echec: Boolean): String =
-    decrireSerie(paliers) + if (echec) " $MENTION_ECHEC" else ""
-
-/** Marqueur « à l'échec » d'une série, en texte. */
-const val MENTION_ECHEC = "(à l’échec)"
+/**
+ * « 40 kg × 15 (RIR 2) » ; une dégressive : « 50 kg × 10 (RIR 2) ↓ 30 kg × 8 (RIR 0) ↓ 20 kg × 6 » (toast, dialogues,
+ * export texte). Le RIR suit chaque palier qui en a un ; sans [avecRir], il est omis (rappel des paliers gardés).
+ */
+fun decrireSerie(paliers: List<ValeursPalier>, avecRir: Boolean = true): String =
+    paliers.joinToString(" ↓ ") { palier ->
+        decrirePalier(palier.poidsKg, palier.repetitions) + if (avecRir && palier.rir != null) " (${mentionRir(palier.rir)})" else ""
+    }
 
 /** « 15 × 40 kg », ou « 12 × PDC » au poids du corps : répétitions en tête (historique de l'exercice, 3g). */
 fun decrirePalierHistorique(poidsKg: Double?, repetitions: Int): String =
@@ -62,17 +75,22 @@ sealed interface LecturePaliers {
     data class Erreurs(val lignes: Set<Int>) : LecturePaliers
 }
 
+/** Textes d'un palier de la feuille d'édition, tels que saisis. */
+data class TextesPalier(val poids: String, val repetitions: String, val rir: String = "")
+
 /**
- * Paliers saisis, ligne par ligne (poids, répétitions) : les lignes entièrement vides sont ignorées, les autres
- * demandent des répétitions (le poids reste facultatif, comme en saisie). Sans aucune ligne remplie, c'est la
- * première qui est signalée.
+ * Paliers saisis, ligne par ligne : les lignes sans poids ni répétitions sont ignorées (un RIR seul ne compte pas,
+ * comme en saisie), les autres demandent des répétitions (le poids et le RIR restent facultatifs, spec §4.3.5).
+ * Sans aucune ligne remplie, c'est la première qui est signalée.
  */
-fun lirePaliers(lignes: List<Pair<String, String>>): LecturePaliers {
-    val remplies = lignes.withIndex().filter { (_, ligne) -> ligne.first.isNotBlank() || ligne.second.isNotBlank() }
+fun lirePaliers(lignes: List<TextesPalier>): LecturePaliers {
+    val remplies = lignes.withIndex().filter { (_, ligne) -> ligne.poids.isNotBlank() || ligne.repetitions.isNotBlank() }
     if (remplies.isEmpty()) return LecturePaliers.Erreurs(setOf(0))
-    val erreurs = remplies.filter { lireRepetitions(it.value.second) == null }.map { it.index }.toSet()
+    val erreurs = remplies.filter { lireRepetitions(it.value.repetitions) == null }.map { it.index }.toSet()
     if (erreurs.isNotEmpty()) return LecturePaliers.Erreurs(erreurs)
-    return LecturePaliers.Valide(remplies.map { (_, ligne) -> ValeursPalier(lirePoids(ligne.first), lireRepetitions(ligne.second)!!) })
+    return LecturePaliers.Valide(
+        remplies.map { (_, ligne) -> ValeursPalier(lirePoids(ligne.poids), lireRepetitions(ligne.repetitions)!!, lireRir(ligne.rir)) },
+    )
 }
 
 private fun nombre(texte: String): Double? =

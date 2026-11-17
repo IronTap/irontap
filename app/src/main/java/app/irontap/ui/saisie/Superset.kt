@@ -18,14 +18,14 @@ class ChampsOnglet {
     val repetitions = TextFieldState()
 
     /**
-     * Case « à l'échec » (DECISIONS.md) : elle vaut pour toute la série, paliers d'une dégressive compris, et se décoche
-     * quand la série est enregistrée.
+     * RIR choisi par les pastilles (DECISIONS.md), facultatif : il vaut pour le palier en cours, et s'efface avec les
+     * autres champs quand la série ou le palier est enregistré.
      */
-    var echec by mutableStateOf(false)
+    var rir by mutableStateOf<Int?>(null)
 
     /**
-     * Ni poids, ni répétitions : onglet ignoré par « Nouvel exercice » s'il n'a pas non plus de palier gardé. La case
-     * « à l'échec » n'y change rien : sans répétitions, il n'y a pas de série à marquer.
+     * Ni poids, ni répétitions : onglet ignoré par « Nouvel exercice » s'il n'a pas non plus de palier gardé. Un RIR
+     * choisi n'y change rien : sans répétitions, il n'y a pas de palier auquel le rattacher.
      */
     val vide get() = poids.text.isBlank() && repetitions.text.isBlank()
 }
@@ -60,6 +60,6 @@ class EtatSuperset(
     /** Tour en cours : le suivant du dernier tour enregistré, A et B confondus. */
     val tour = 1 + RoleSuperset.entries.maxOf { role -> exercice(role)?.series?.maxOfOrNull { it.serie.ordre } ?: 0 }
 
-    /** En-tête en dégressive pour cet onglet : « 50 kg × 10 ↓ … », `null` sans palier gardé. */
-    fun chaineDegressive(role: RoleSuperset): String? = paliers(role).takeIf { it.isNotEmpty() }?.let { decrireSerie(it) + " ↓ …" }
+    /** En-tête en dégressive pour cet onglet : « 50 kg × 10 ↓ … » (sans les RIR), `null` sans palier gardé. */
+    fun chaineDegressive(role: RoleSuperset): String? = paliers(role).takeIf { it.isNotEmpty() }?.let { decrireSerie(it, avecRir = false) + " ↓ …" }
 }

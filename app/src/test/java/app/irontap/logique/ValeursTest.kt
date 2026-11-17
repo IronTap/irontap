@@ -63,4 +63,39 @@ class ValeursTest {
         assertEquals("40 kg × 15", decrireSerie(listOf(ValeursPalier(40.0, 15))))
         assertEquals("50 kg × 10 ↓ 30 kg × 8 ↓ PDC × 6", decrireSerie(listOf(ValeursPalier(50.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6))))
     }
+
+    @Test
+    fun `RIR facultatif, au-dela de 5 enregistre 5+`() {
+        assertEquals(null, lireRir(""))
+        assertEquals(null, lireRir("  "))
+        assertEquals(null, lireRir("a"))
+        assertEquals(null, lireRir("-1"))
+        assertEquals(0, lireRir("0"))
+        assertEquals(3, lireRir(" 3 "))
+        assertEquals(5, lireRir("5"))
+        assertEquals(5, lireRir("5+"))
+        assertEquals(5, lireRir("7"))
+        assertEquals(5, lireRir("12"))
+        assertEquals("4", formaterRir(4))
+        assertEquals("5+", formaterRir(5))
+        assertEquals("RIR 0", mentionRir(0))
+        assertEquals("RIR 5+", mentionRir(5))
+    }
+
+    @Test
+    fun `RIR apres chaque palier qui en a un, sauf dans le rappel des paliers gardes`() {
+        val paliers = listOf(ValeursPalier(50.0, 10, 2), ValeursPalier(30.0, 8), ValeursPalier(null, 6, 5))
+        assertEquals("50 kg × 10 (RIR 2) ↓ 30 kg × 8 ↓ PDC × 6 (RIR 5+)", decrireSerie(paliers))
+        assertEquals("50 kg × 10 ↓ 30 kg × 8 ↓ PDC × 6", decrireSerie(paliers, avecRir = false))
+    }
+
+    @Test
+    fun `paliers de la feuille d'edition, RIR facultatif, un RIR seul ne compte pas`() {
+        assertEquals(
+            LecturePaliers.Valide(listOf(ValeursPalier(45.0, 10, 2), ValeursPalier(30.0, 8), ValeursPalier(null, 6, 5))),
+            lirePaliers(listOf(TextesPalier("45", "10", "2"), TextesPalier("30", "8"), TextesPalier("", "6", "12"), TextesPalier("", "", "1"))),
+        )
+        assertEquals(LecturePaliers.Erreurs(setOf(0)), lirePaliers(listOf(TextesPalier("", "", "3"))))
+        assertEquals(LecturePaliers.Erreurs(setOf(1)), lirePaliers(listOf(TextesPalier("45", "10"), TextesPalier("30", "", "0"))))
+    }
 }

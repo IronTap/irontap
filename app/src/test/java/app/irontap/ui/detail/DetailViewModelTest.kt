@@ -213,7 +213,7 @@ class DetailViewModelTest {
     fun `degressive en tableau, modifier, ajouter et retirer des paliers, jamais le palier 1`() = runTest {
         val vm = ecran()
         val tirage = vm.pret().complet.exercices[0]
-        dao.modifierSerie(tirage.series[2].serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(20.0, 6)), horloge.maintenant(), echec = false)
+        dao.modifierSerie(tirage.series[2].serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(20.0, 6)), horloge.maintenant())
         val degressive = vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.size == 3 }
             .let { (it as EtatDetail.Pret).complet.exercices[0].series[2] }
 
@@ -243,7 +243,7 @@ class DetailViewModelTest {
         val vm = ecran()
         val tirage = vm.pret().complet.exercices[0]
         val paliers = listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(20.0, 6))
-        dao.modifierSerie(tirage.series[2].serie.id, paliers, horloge.maintenant(), echec = false)
+        dao.modifierSerie(tirage.series[2].serie.id, paliers, horloge.maintenant())
         val degressive = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.size == 3 }
             as EtatDetail.Pret).complet.exercices[0].series[2]
         val avant = seriesTirage()
@@ -463,62 +463,77 @@ class DetailViewModelTest {
         assertEquals(2, dao.lireComplet(id)!!.exercices.single().series.size)
     }
 
-    // --- Case « à l'échec » (DECISIONS.md) ---
+    // --- RIR (DECISIONS.md) ---
+
+    /** RIR de chaque palier, série par série, exercice par exercice. */
+    private suspend fun rirs() = dao.lireComplet(id)!!.exercices.map { e -> e.series.map { s -> s.paliers.map { it.rir } } }
 
     @Test
-    fun `case a l'echec de la feuille d'edition, pre-cochee, enregistree avec la serie`() = runTest {
+    fun `RIR de la feuille d'edition, pre-rempli, choisi aux pastilles ou saisi par palier`() = runTest {
         val vm = ecran()
         val tirage = vm.pret().complet.exercices[0]
         vm.ouvrirEdition(tirage.exercice, tirage.series[2])
-        assertEquals(false, vm.panneaux.value.edition?.echec)
-        vm.basculerEchec()
-        assertEquals(true, vm.panneaux.value.edition?.echec)
+        assertEquals("", vm.paliers.single().rir.text.toString())
+        vm.choisirRir(5)
+        assertEquals("5", vm.paliers.single().rir.text.toString())
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
-        assertEquals(listOf(false, false, true), dao.lireComplet(id)!!.exercices[0].series.map { it.serie.echec })
+        assertEquals(listOf(listOf(null), listOf(null), listOf(5)), rirs()[0])
 
-        // Rouverte : la case est cochée ; décochée, la série ne l'est plus. Une série ajoutée peut l'être aussi.
-        val marquee = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.serie?.echec == true } as EtatDetail.Pret)
+        // Rouverte : le RIR est pré-rempli ; effacé, la série n'en a plus.
+        val notee = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.get(0)?.rir == 5 } as EtatDetail.Pret)
             .complet.exercices[0].series[2]
-        vm.ouvrirEdition(tirage.exercice, marquee)
-        assertEquals(true, vm.panneaux.value.edition?.echec)
-        vm.basculerEchec()
+        vm.ouvrirEdition(tirage.exercice, notee)
+        assertEquals("5", vm.paliers.single().rir.text.toString())
+        vm.choisirRir(null)
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
+        assertEquals(listOf(listOf(null), listOf(null), listOf(null)), rirs()[0])
+
+        // Tableau : un RIR par palier, au clavier, 5 au-delà ; seul sur une ligne sans valeur, il ne compte pas.
         vm.ouvrirEdition(tirage.exercice, serie = null)
-        assertEquals(false, vm.panneaux.value.edition?.echec)
-        vm.paliers.single().repetitions.setTextAndPlaceCursorAtEnd("8")
-        vm.basculerEchec()
+        vm.paliers.single().remplir("45", "10", "2")
+        vm.ajouterPalier()
+        vm.paliers[1].remplir("30", "8", "12")
+        vm.ajouterPalier()
+        vm.paliers[2].remplir("", "", "1")
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
-        assertEquals(listOf(false, false, false, true), dao.lireComplet(id)!!.exercices[0].series.map { it.serie.echec })
+        assertEquals(listOf(listOf(null), listOf(null), listOf(null), listOf(2, 5)), rirs()[0])
     }
 
     @Test
-    fun `case a l'echec de la feuille d'un tour, par exercice, ignoree pour un bloc vide`() = runTest {
+    fun `RIR de la feuille d'un tour, par exercice, pre-rempli, ignore pour un bloc vide`() = runTest {
         avecSuperset()
         val vm = ecran()
         val bloc = vm.superset()
         vm.ouvrirModificationTour(bloc, bloc.tours[0])
-        assertEquals(emptySet<RoleSuperset>(), vm.panneaux.value.tour?.echecs)
-        vm.basculerEchecTour(RoleSuperset.B)
+        assertEquals("", vm.champsTour.getValue(RoleSuperset.B).rir.text.toString())
+        vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("1")
         vm.enregistrerTour()
         vm.panneaux.attendre { it.tour == null }
-        suspend fun echecs() = dao.lireComplet(id)!!.exercices.map { e -> e.series.map { it.serie.echec } }
-        assertEquals(listOf(listOf(false, false), listOf(true, false)), echecs())
+        assertEquals(listOf(listOf(listOf(null), listOf(null)), listOf(listOf(1), listOf(null, null))), rirs())
 
-        val marque = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.get(0)?.serie?.echec == true } as EtatDetail.Pret)
-        val blocMarque = blocsDetail(marque.complet.exercices).filterIsInstance<BlocDetail.Superset>().single()
-        vm.ouvrirModificationTour(blocMarque, blocMarque.tours[0])
-        assertEquals(setOf(RoleSuperset.B), vm.panneaux.value.tour?.echecs)
-        vm.ouvrirAjoutTour(bloc)
-        assertEquals(emptySet<RoleSuperset>(), vm.panneaux.value.tour?.echecs)
-        // B laissé vide : sa case cochée n'enregistre rien.
-        vm.champsTour.getValue(RoleSuperset.A).repetitions.setTextAndPlaceCursorAtEnd("8")
-        vm.basculerEchecTour(RoleSuperset.A)
-        vm.basculerEchecTour(RoleSuperset.B)
+        // Rouverte : pré-rempli. Le RIR saisi va au palier principal, les paliers dégressifs gardent le leur.
+        val note = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.get(0)?.paliers?.get(0)?.rir == 1 } as EtatDetail.Pret)
+        val blocNote = blocsDetail(note.complet.exercices).filterIsInstance<BlocDetail.Superset>().single()
+        vm.ouvrirModificationTour(blocNote, blocNote.tours[0])
+        assertEquals("1", vm.champsTour.getValue(RoleSuperset.B).rir.text.toString())
+        vm.ouvrirModificationTour(blocNote, blocNote.tours[1])
+        vm.champsTour.getValue(RoleSuperset.A).rir.setTextAndPlaceCursorAtEnd("0")
+        vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("7")
         vm.enregistrerTour()
         vm.panneaux.attendre { it.tour == null }
-        assertEquals(listOf(listOf(false, false, true), listOf(true, false)), echecs())
+        assertEquals(listOf(listOf(listOf(null), listOf(0)), listOf(listOf(1), listOf(5, null))), rirs())
+
+        // Nouveau tour, B seulement avec un RIR : bloc vide, ignoré.
+        vm.ouvrirAjoutTour(blocNote)
+        assertEquals("", vm.champsTour.getValue(RoleSuperset.A).rir.text.toString())
+        vm.champsTour.getValue(RoleSuperset.A).remplir("6", "8", "2")
+        vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("3")
+        assertTrue(vm.tourEnregistrable())
+        vm.enregistrerTour()
+        vm.panneaux.attendre { it.tour == null }
+        assertEquals(listOf(listOf(listOf(null), listOf(0), listOf(2)), listOf(listOf(1), listOf(5, null))), rirs())
     }
 }

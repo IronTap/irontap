@@ -1,7 +1,9 @@
 package app.irontap.ui.composants
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
@@ -18,8 +20,9 @@ import app.irontap.ui.theme.Typo
 /**
  * Valeur d'une série : palier principal en [stylePrincipal], puis paliers dégressifs empilés dessous
  * (gap 2) en 16 / 500 neutre-300, précédés d'une flèche ↓ accent-300 de 13 dp (détail 6a, popup 3g).
- * [retrait] : décalage des paliers dégressifs (2 dp dans la popup 3g, aucun dans le détail 6a). [echec] : batterie vide
- * après le palier principal (série à l'échec, DECISIONS.md).
+ * [retrait] : décalage des paliers dégressifs (2 dp dans la popup 3g, aucun dans le détail 6a). [rirs] : RIR de chaque
+ * palier, le principal d'abord, affiché en badge après sa valeur (DECISIONS.md) ; `null` ou absent : pas de badge.
+ * Sur une cellule étroite (tour de superset), le badge passe sous la valeur plutôt que de la couper.
  */
 @Composable
 fun PaliersEmpiles(
@@ -28,27 +31,37 @@ fun PaliersEmpiles(
     stylePrincipal: TextStyle,
     modifier: Modifier = Modifier,
     retrait: Dp = 0.dp,
-    echec: Boolean = false,
+    rirs: List<Int?> = emptyList(),
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        if (echec) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Le texte cède la place à l'icône sur une cellule étroite (tour de superset) : il passe à la ligne.
-                Text(principal, style = stylePrincipal, color = Couleurs.Texte, modifier = Modifier.weight(1f, fill = false))
-                IconeEchec()
-            }
-        } else {
+        AvecRir(rirs.firstOrNull()) {
             Text(principal, style = stylePrincipal, color = Couleurs.Texte)
         }
-        degressifs.forEach { palier ->
-            Row(
-                modifier = Modifier.padding(start = retrait),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icone(R.drawable.ic_arrow_down_small, taille = 13.dp, couleur = Couleurs.Accent300, description = "puis")
-                Text(palier, style = Typo.PalierDegressif, color = Couleurs.Neutre300)
+        degressifs.forEachIndexed { index, palier ->
+            AvecRir(rirs.getOrNull(index + 1), Modifier.padding(start = retrait)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icone(R.drawable.ic_arrow_down_small, taille = 13.dp, couleur = Couleurs.Accent300, description = "puis")
+                    Text(palier, style = Typo.PalierDegressif, color = Couleurs.Neutre300)
+                }
             }
+        }
+    }
+}
+
+/** [valeur] suivie du badge de son [rir] s'il est noté, ou dessous si la largeur manque. */
+@Composable
+private fun AvecRir(rir: Int?, modifier: Modifier = Modifier, valeur: @Composable () -> Unit) {
+    if (rir == null) {
+        Box(modifier) { valeur() }
+    } else {
+        FlowRow(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            valeur()
+            BadgeRir(rir)
         }
     }
 }

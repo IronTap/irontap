@@ -30,19 +30,18 @@ import app.irontap.ui.composants.ApparenceChampPalier
 import app.irontap.ui.composants.BadgeLettre
 import app.irontap.ui.composants.BoutonPrincipal
 import app.irontap.ui.composants.BoutonTexte
-import app.irontap.ui.composants.CaseEchec
 import app.irontap.ui.composants.ChampPalier
-import app.irontap.ui.composants.DESCRIPTION_ECHEC
 import app.irontap.ui.composants.FeuilleNocturne
 import app.irontap.ui.composants.Icone
 import app.irontap.ui.composants.MessageErreur
+import app.irontap.ui.composants.TypeChampPalier
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Typo
 
 /**
  * « Ajouter un tour » / « Modifier le tour N » d'un superset (maquette 3·S+ T1) : blocs A puis B, poids × répétitions
- * au clavier numérique (« Suivant » : A poids → A reps → B poids → B reps), valeurs du tour précédent en indication,
- * case « à l'échec » à droite des répétitions.
+ * puis RIR (facultatif) au clavier numérique (« Suivant » : A poids → A reps → A RIR → B poids → B reps → B RIR), valeurs
+ * du tour précédent en indication (pas pour le RIR, qui affiche « RIR » tant qu'il est vide).
  * Un bloc vide est ignoré ; les deux vides désactivent « Enregistrer le tour ». Affichée tant que [edition] n'est pas
  * `null`, refermée avec son animation ensuite.
  */
@@ -57,7 +56,6 @@ fun FeuilleTour(
     onEnregistrer: () -> Unit,
     onSupprimer: (EditionTour) -> Unit,
     onFermer: () -> Unit,
-    onBasculerEchec: (RoleSuperset) -> Unit,
 ) {
     var affichee by remember { mutableStateOf(edition) }
     if (edition != null) affichee = edition
@@ -70,8 +68,8 @@ fun FeuilleTour(
         }
     }
     val focusManager = LocalFocusManager.current
-    // Ordre de saisie : A poids, A reps, B poids, B reps.
-    val focus = remember { List(4) { FocusRequester() } }
+    // Ordre de saisie : A poids, A reps, A RIR, B poids, B reps, B RIR.
+    val focus = remember { List(6) { FocusRequester() } }
     FeuilleNocturne(onFermer = onFermer, etat = etat, margeHorizontale = 16.dp, espacePoignee = 16.dp) {
         Text(
             text = if (contenu.existant) "Modifier le tour ${contenu.tour}" else "Ajouter un tour",
@@ -97,13 +95,13 @@ fun FeuilleTour(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ChampPalier(
                         etat = champ.poids,
-                        poids = true,
+                        type = TypeChampPalier.Poids,
                         largeur = 0.dp,
                         description = "Poids de l’exercice $role",
                         modifier = Modifier
                             .weight(1f)
-                            .focusRequester(focus[index * 2]),
-                        onSuivant = KeyboardActionHandler { focus[index * 2 + 1].requestFocus() },
+                            .focusRequester(focus[index * 3]),
+                        onSuivant = KeyboardActionHandler { focus[index * 3 + 1].requestFocus() },
                         apparence = ApparenceChampPalier.Tour,
                         indication = indication?.poidsKg?.let(::formaterPoids) ?: "0",
                         remplir = true,
@@ -112,22 +110,25 @@ fun FeuilleTour(
                     val dernier = index == RoleSuperset.entries.lastIndex
                     ChampPalier(
                         etat = champ.repetitions,
-                        poids = false,
+                        type = TypeChampPalier.Repetitions,
                         largeur = 96.dp,
                         description = "Répétitions de l’exercice $role",
-                        modifier = Modifier.focusRequester(focus[index * 2 + 1]),
+                        modifier = Modifier.focusRequester(focus[index * 3 + 1]),
                         erreur = champ.cle in paliersEnErreur,
-                        imeAction = if (dernier) ImeAction.Done else ImeAction.Next,
-                        onSuivant = KeyboardActionHandler { if (dernier) focusManager.clearFocus() else focus[index * 2 + 2].requestFocus() },
+                        onSuivant = KeyboardActionHandler { focus[index * 3 + 2].requestFocus() },
                         apparence = ApparenceChampPalier.Tour,
                         indication = indication?.repetitions?.toString() ?: "0",
                     )
-                    CaseEchec(
-                        coche = role in contenu.echecs,
-                        onBasculer = { onBasculerEchec(role) },
-                        taille = 58.dp,
-                        fond = Couleurs.Fond,
-                        description = "$DESCRIPTION_ECHEC, exercice $role",
+                    ChampPalier(
+                        etat = champ.rir,
+                        type = TypeChampPalier.Rir,
+                        largeur = 64.dp,
+                        description = "RIR de l’exercice $role",
+                        modifier = Modifier.focusRequester(focus[index * 3 + 2]),
+                        imeAction = if (dernier) ImeAction.Done else ImeAction.Next,
+                        onSuivant = KeyboardActionHandler { if (dernier) focusManager.clearFocus() else focus[index * 3 + 3].requestFocus() },
+                        apparence = ApparenceChampPalier.Tour,
+                        indication = "RIR",
                     )
                 }
             }

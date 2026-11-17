@@ -256,7 +256,7 @@ class EntrainementDaoTest {
         val plusTard = t0.plusSeconds(86_400)
 
         dao.renommerExercice(exercice.id, "  Tirage vertical ")
-        dao.modifierSerie(s1!!.serie.id, listOf(ValeursPalier(41.25, 14)), plusTard, echec = false)
+        dao.modifierSerie(s1!!.serie.id, listOf(ValeursPalier(41.25, 14)), plusTard)
         val ajout = dao.ajouterSerie(exercice.id, listOf(ValeursPalier(null, 20)), plusTard)
 
         assertEquals(2, ajout.serie.ordre)
@@ -393,11 +393,11 @@ class EntrainementDaoTest {
         dao.terminer(id, t0)
         val plusTard = t0.plusSeconds(60)
 
-        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6)), plusTard, echec = false)
+        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(45.0, 10), ValeursPalier(30.0, 8), ValeursPalier(null, 6)), plusTard)
         assertEquals(listOf("1.Tirage: 1/45.0×10↓30.0×8↓null×6"), resume(id))
         assertEquals(plusTard, exercices(id).single().series.single().serie.modifieLe)
 
-        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(40.0, 12)), plusTard, echec = false)
+        dao.modifierSerie(simple.serie.id, listOf(ValeursPalier(40.0, 12)), plusTard)
         assertEquals(listOf("1.Tirage: 1/40.0×12"), resume(id))
         assertEquals(listOf(1), exercices(id).single().series.single().paliers.map { it.ordre })
 
@@ -680,60 +680,81 @@ class EntrainementDaoTest {
     }
 
 
-    // --- Marqueur « à l'échec » (DECISIONS.md) ---
+    // --- RIR par palier (DECISIONS.md) ---
 
-    /** Marqueur de chaque série, exercice par exercice. */
-    private suspend fun echecs(id: Long) = exercices(id).map { e -> e.series.map { it.serie.echec } }
+    /** RIR de chaque palier, série par série, exercice par exercice. */
+    private suspend fun rirs(id: Long) = exercices(id).map { e -> e.series.map { s -> s.paliers.map { it.rir } } }
 
     @Test
-    fun `serie a l'echec, degressive comprise, lue dans l'historique de l'exercice`() = runTest {
+    fun `RIR de chaque palier, degressive comprise, lu dans l'historique de l'exercice`() = runTest {
         val passe = creer(lundi.minusDays(7))
         serie(passe, nom = "Tirage", poids = 40.0, reps = 10)
-        assertTrue(checkNotNull(dao.enregistrerSerie(passe, "", 40.0, 10, Suite.NouvelleSerie, t0, 0, echec = true)).serie.echec)
-        dao.ajouterPalierEnCours(passe, "", 45.0, 8)
-        dao.enregistrerSerie(passe, "", 30.0, 6, Suite.NouvelleSerie, t0, 0, echec = true)
-        dao.enregistrerSerieEtTerminer(passe, "", 25.0, 10, t0, 0, echec = true)
-        assertEquals(listOf(listOf(false, true, true, true)), echecs(passe))
+        assertEquals(listOf(2), checkNotNull(dao.enregistrerSerie(passe, "", 40.0, 10, Suite.NouvelleSerie, t0, 0, rir = 2)).paliers.map { it.rir })
+        // Dégressive : chaque palier gardé a son RIR, ou pas, comme le dernier.
+        dao.ajouterPalierEnCours(passe, "", 45.0, 8, rir = 1)
+        dao.ajouterPalierEnCours(passe, "", 35.0, 6)
+        dao.enregistrerSerie(passe, "", 30.0, 6, Suite.NouvelleSerie, t0, 0, rir = 0)
+        dao.enregistrerSerieEtTerminer(passe, "", 25.0, 10, t0, 0, rir = 5)
+        assertEquals(listOf(listOf(listOf(null), listOf(2), listOf(1, null, 0), listOf(5))), rirs(passe))
 
-        val lignes = dao.lireHistoriqueExercice(creer(), "Tirage")
-        // Une ligne par palier : le marqueur de la série est répété sur chacun.
-        assertEquals(listOf(false, true, true, true, true), lignes.map { it.echec })
+        // Une ligne par palier, avec son RIR.
+        assertEquals(listOf(null, 2, 1, null, 0, 5), dao.lireHistoriqueExercice(creer(), "Tirage").map { it.rir })
     }
 
     @Test
-    fun `modifier une serie change son marqueur, ajouter une serie le pose`() = runTest {
+    fun `modifier une serie remplace ses RIR, ajouter une serie les pose, hors de 0 a 5 refuse`() = runTest {
         val id = creer()
         val serie = checkNotNull(serie(id, nom = "Squat"))
         dao.terminer(id, t0)
         val exercice = exercices(id).single().exercice.id
 
-        dao.modifierSerie(serie.serie.id, listOf(ValeursPalier(40.0, 10)), t0, echec = true)
-        dao.ajouterSerie(exercice, listOf(ValeursPalier(40.0, 8)), t0, echec = true)
-        assertEquals(listOf(listOf(true, true)), echecs(id))
-        dao.modifierSerie(serie.serie.id, listOf(ValeursPalier(40.0, 10)), t0, echec = false)
-        assertEquals(listOf(listOf(false, true)), echecs(id))
+        dao.modifierSerie(serie.serie.id, listOf(ValeursPalier(40.0, 10, 3), ValeursPalier(30.0, 8, 0)), t0)
+        dao.ajouterSerie(exercice, listOf(ValeursPalier(40.0, 8, 1)), t0)
+        assertEquals(listOf(listOf(listOf(3, 0), listOf(1))), rirs(id))
+        dao.modifierSerie(serie.serie.id, listOf(ValeursPalier(40.0, 10)), t0)
+        assertEquals(listOf(listOf(listOf(null), listOf(1))), rirs(id))
+
+        assertTrue(runCatching { dao.ajouterSerie(exercice, listOf(ValeursPalier(40.0, 8, 6)), t0) }.isFailure)
+        assertTrue(runCatching { dao.ajouterSerie(exercice, listOf(ValeursPalier(40.0, 8, -1)), t0) }.isFailure)
+        assertEquals(listOf(listOf(listOf(null), listOf(1))), rirs(id))
     }
 
     @Test
-    fun `superset, marqueur par onglet, memorise puis efface avec les valeurs du tour`() = runTest {
+    fun `annuler une serie rend les paliers gardes avec leur RIR`() = runTest {
+        val id = creer()
+        serie(id, nom = "Tirage")
+        dao.ajouterPalierEnCours(id, "", 45.0, 8, rir = 1)
+        val enregistree = checkNotNull(dao.enregistrerSerieAnnulable(id, "", 30.0, 6, Suite.NouvelleSerie, t0, 0, rir = 0))
+        assertEquals(listOf(1, 0), enregistree.valeur.paliers.map { it.rir })
+
+        assertTrue(dao.annuler(enregistree.annulation))
+        assertEquals(listOf(ValeursPalier(45.0, 8, 1)), dao.lireEnCoursComplet()?.paliersEnCours?.map { it.valeurs })
+    }
+
+    @Test
+    fun `superset, RIR par onglet, memorise puis efface avec les valeurs du tour`() = runTest {
         val id = creer()
         val superset = checkNotNull(dao.commencerSuperset(id, "Élévations", "s1"))
-        dao.memoriserSuperset(superset.copy(nomB = "Curl", echecB = true))
-        assertEquals(superset.copy(nomB = "Curl", echecB = true), dao.lireEnCoursComplet()?.superset)
+        dao.memoriserSuperset(superset.copy(nomB = "Curl", rirA = 0, rirB = 5))
+        assertEquals(superset.copy(nomB = "Curl", rirA = 0, rirB = 5), dao.lireEnCoursComplet()?.superset)
 
-        dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), SaisieOnglet("Curl", 12.0, 12, echec = true), false, t0, 0)
-        // Après le tour, les cases sont décochées avec les valeurs saisies.
+        dao.ajouterPalierEnCours(id, "", 10.0, 12, RoleSuperset.A, rir = 2)
+        dao.enregistrerTour(id, onglet("Élévations", 8.0, 15), SaisieOnglet("Curl", 12.0, 12, rir = 1), false, t0, 0)
+        // Après le tour, les RIR sont effacés avec les valeurs saisies.
         assertEquals(SupersetEnCours(id, "s1", nomA = "Élévations", nomB = "Curl"), dao.lireEnCoursComplet()?.superset)
-        dao.enregistrerTour(id, SaisieOnglet("", 8.0, 12, echec = true), onglet("", 12.0, 10), true, t0, 0)
-        assertEquals(listOf(listOf(false, true), listOf(true, false)), echecs(id))
+        dao.enregistrerTour(id, SaisieOnglet("", 8.0, 12, rir = 0), onglet("", 12.0, 10), true, t0, 0)
+        assertEquals(listOf(listOf(listOf(2, null), listOf(0)), listOf(listOf(1), listOf(null))), rirs(id))
     }
 
     @Test
-    fun `tour ecrit depuis le detail avec son marqueur, un bloc ignore garde le sien`() = runTest {
+    fun `tour ecrit depuis le detail avec ses RIR, un bloc ignore garde les siens`() = runTest {
         val (id, a, b) = supersetTermine()
-        dao.ecrireTour(a, b, 1, listOf(ValeursPalier(8.0, 15)), listOf(ValeursPalier(12.0, 12)), t0, echecA = true, echecB = true)
-        dao.ecrireTour(a, b, 1, null, listOf(ValeursPalier(12.0, 12)), t0, echecB = false)
-        assertEquals(4, dao.ecrireTour(a, b, null, listOf(ValeursPalier(6.0, 10)), null, t0, echecA = true))
-        assertEquals(listOf(listOf(true, false, false, true), listOf(false, false, false)), echecs(id))
+        dao.ecrireTour(a, b, 1, listOf(ValeursPalier(8.0, 15, 2)), listOf(ValeursPalier(12.0, 12, 1)), t0)
+        dao.ecrireTour(a, b, 1, null, listOf(ValeursPalier(12.0, 12)), t0)
+        assertEquals(4, dao.ecrireTour(a, b, null, listOf(ValeursPalier(6.0, 10, 0)), null, t0))
+        assertEquals(
+            listOf(listOf(listOf(2), listOf(null), listOf(null), listOf(0)), listOf(listOf(null), listOf(null), listOf(null))),
+            rirs(id),
+        )
     }
 }

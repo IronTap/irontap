@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.InputTransformation
+import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.irontap.R
+import app.irontap.logique.RIR_MAX
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Formes
 import app.irontap.ui.theme.Typo
@@ -186,17 +188,21 @@ private fun ChampValeur(
     )
 }
 
+/** Valeur d'un [ChampPalier]. */
+enum class TypeChampPalier { Poids, Repetitions, Rir }
+
 /**
- * Champ d'un palier dans le tableau d'édition d'une dégressive (7·D) : 48 dp de haut, [largeur] au moins (poids 100,
- * répétitions 68 ; un poids comme « 102,25 » élargit le champ plutôt que d'être coupé), surface, rayon 8, filet
+ * Champ d'un palier dans le tableau d'édition d'une dégressive (7·D) : 48 dp de haut, [largeur] au moins (poids 92,
+ * répétitions 60, RIR 48 ; un poids comme « 102,25 » élargit le champ plutôt que d'être coupé), surface, rayon 8, filet
  * séparateur ; actif : bordure accent 2 dp ; erreur : 2 dp couleur erreur. Valeur 24 / 500 calée à droite, suivie
  * de « kg » 15 / 400 neutre-400 pour le poids. Clavier numérique ; [onSuivant] reçoit l'action « Suivant »
- * ([imeAction]) du clavier.
+ * ([imeAction]) du clavier. RIR ([TypeChampPalier.Rir], facultatif) : un entier de 3 chiffres au plus, « 5 » affiché
+ * « 5+ » ; vide, l'[indication] est en style d'unité (« RIR »).
  */
 @Composable
 fun ChampPalier(
     etat: TextFieldState,
-    poids: Boolean,
+    type: TypeChampPalier,
     largeur: Dp,
     description: String,
     modifier: Modifier = Modifier,
@@ -211,11 +217,23 @@ fun ChampPalier(
 ) {
     val interactions = remember { MutableInteractionSource() }
     val focus by interactions.collectIsFocusedAsState()
+    val poids = type == TypeChampPalier.Poids
+    val rir = type == TypeChampPalier.Rir
     // Largeur du contenu (valeur, « kg », marges, curseur) : au-delà de [largeur], le champ s'élargit.
     val mesureur = rememberTextMeasurer()
-    val marge = apparence.marge ?: if (poids) 10.dp else 12.dp
+    val marge = apparence.marge ?: when (type) {
+        TypeChampPalier.Poids -> 10.dp
+        TypeChampPalier.Repetitions -> 12.dp
+        TypeChampPalier.Rir -> 8.dp
+    }
+    val styleIndication = if (rir) apparence.unite else apparence.valeur
     val largeurContenu = with(LocalDensity.current) {
-        val valeur = mesureur.measure(etat.text.toString().ifEmpty { indication }, apparence.valeur).size.width.toDp()
+        val texte = etat.text.toString()
+        val valeur = if (texte.isEmpty()) {
+            mesureur.measure(indication, styleIndication)
+        } else {
+            mesureur.measure(if (rir) texteRirAffiche(texte) else texte, apparence.valeur)
+        }.size.width.toDp()
         val unite = if (poids) mesureur.measure("kg", apparence.unite).size.width.toDp() + apparence.ecartUnite else 0.dp
         valeur + unite + marge * 2 + 2.dp
     }
@@ -223,6 +241,7 @@ fun ChampPalier(
         state = etat,
         modifier = modifier.semantics { contentDescription = description },
         inputTransformation = if (poids) FiltrePoids else FiltreRepetitions,
+        outputTransformation = if (rir) AffichageRir else null,
         textStyle = apparence.valeur.copy(color = Couleurs.Texte, textAlign = TextAlign.End),
         keyboardOptions = KeyboardOptions(keyboardType = if (poids) KeyboardType.Decimal else KeyboardType.Number, imeAction = imeAction),
         onKeyboardAction = onSuivant,
@@ -248,7 +267,7 @@ fun ChampPalier(
                 horizontalArrangement = Arrangement.spacedBy(apparence.ecartUnite, Alignment.End),
             ) {
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    if (etat.text.isEmpty()) Text(indication, style = apparence.valeur, color = Couleurs.Neutre600)
+                    if (etat.text.isEmpty()) Text(indication, style = styleIndication, color = Couleurs.Neutre600, maxLines = 1)
                     champ()
                 }
                 if (poids) Text("kg", style = apparence.unite, color = if (etat.text.isEmpty()) apparence.uniteSansValeur else Couleurs.Neutre400)
@@ -315,5 +334,14 @@ private object FiltreRepetitions : InputTransformation {
     private val Format = Regex("""\d{0,3}""")
     override fun TextFieldBuffer.transformInput() {
         if (!Format.matches(asCharSequence())) revertAllChanges()
+    }
+}
+
+/** RIR tel qu'affiché : « 5 » se lit « 5+ » ; une autre valeur, même au-delà, s'affiche telle que tapée jusqu'à l'enregistrement. */
+private fun texteRirAffiche(texte: String) = if (texte == "$RIR_MAX") "$RIR_MAX+" else texte
+
+private object AffichageRir : OutputTransformation {
+    override fun TextFieldBuffer.transformOutput() {
+        if (asCharSequence().toString() == "$RIR_MAX") append("+")
     }
 }

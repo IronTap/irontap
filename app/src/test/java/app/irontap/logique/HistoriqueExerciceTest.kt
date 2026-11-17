@@ -22,7 +22,8 @@ class HistoriqueExerciceTest {
         reps: Int,
         nom: String = "Tirage vertical",
         serieId: Long = ++derniereSerie,
-    ) = SerieHistorique(entrainement, date, libelle, nom, serieId, poids, reps)
+        rir: Int? = null,
+    ) = SerieHistorique(entrainement, date, libelle, nom, serieId, poids, reps, rir = rir)
 
     private fun lignes(vararg principaux: String) = principaux.map { LigneHistorique(it) }
 
@@ -84,14 +85,18 @@ class HistoriqueExerciceTest {
     }
 
     @Test
-    fun `serie a l'echec, marqueur lu sur son premier palier`() {
+    fun `RIR de chaque palier, aucun pour une serie qui n'en a pas`() {
         val series = historiqueExercice(
             listOf(
                 serie(1, douze, null, 45.0, 10),
-                serie(1, douze, null, 45.0, 10).copy(echec = true),
-                serie(1, douze, null, 30.0, 8, serieId = derniereSerie).copy(echec = true),
+                serie(1, douze, null, 45.0, 10, rir = 2),
+                serie(1, douze, null, 30.0, 8, serieId = derniereSerie),
+                serie(1, douze, null, 20.0, 6, serieId = derniereSerie, rir = 0),
             ),
         )?.seances?.single()?.series
-        assertEquals(listOf(LigneHistorique("10 × 45 kg"), LigneHistorique("10 × 45 kg", listOf("8 × 30 kg"), echec = true)), series)
+        assertEquals(
+            listOf(LigneHistorique("10 × 45 kg"), LigneHistorique("10 × 45 kg", listOf("8 × 30 kg", "6 × 20 kg"), rirs = listOf(2, null, 0))),
+            series,
+        )
     }
 }

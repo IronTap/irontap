@@ -76,3 +76,74 @@ internal object Migration3Vers4 : Migration(3, 4) {
         db.execSQL("ALTER TABLE `superset_en_cours` ADD COLUMN `echec_b` INTEGER NOT NULL DEFAULT 0")
     }
 }
+
+/**
+ * v4 → v5 (RIR par palier, DECISIONS.md) : `palier.rir` et `palier_en_cours.rir` (vides : pas noté), `rir_a` / `rir_b`
+ * du superset en cours de saisie, à la place du marqueur « à l'échec » (`serie.echec`, `superset_en_cours.echec_a` /
+ * `echec_b`). Une série à l'échec passe à RIR 0 sur chacun de ses paliers, le marqueur valant pour toute une dégressive ;
+ * de même pour un onglet de superset en cours dont la case était cochée (paliers gardés et valeur en saisie).
+ *
+ * `serie` et `superset_en_cours` sont recréées sans leurs anciennes colonnes (SQLite d'Android 8 ne sait pas en
+ * supprimer). Comme pour [Migration1Vers2], les clés étrangères restent actives : supprimer l'ancienne `serie`
+ * effacerait ses paliers en cascade. Ils passent donc par une table de transit, et `palier` est recréée après `serie`.
+ * Le compteur d'identifiants de `serie` est conservé : un identifiant de série n'est jamais réutilisé.
+ */
+internal object Migration4Vers5 : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE `transit_palier` (`id` INTEGER NOT NULL, `serie_id` INTEGER NOT NULL, `ordre` INTEGER NOT NULL, " +
+                "`poids_kg` REAL, `repetitions` INTEGER NOT NULL, `rir` INTEGER)",
+        )
+        db.execSQL(
+            "INSERT INTO `transit_palier` SELECT p.`id`, p.`serie_id`, p.`ordre`, p.`poids_kg`, p.`repetitions`, " +
+                "CASE WHEN s.`echec` != 0 THEN 0 END FROM `palier` p JOIN `serie` s ON s.`id` = p.`serie_id`",
+        )
+        db.execSQL("DROP TABLE `palier`")
+
+        val compteurSeries = db.query("SELECT `seq` FROM `sqlite_sequence` WHERE `name` = 'serie'").use { if (it.moveToFirst()) it.getLong(0) else null }
+        db.execSQL(
+            "CREATE TABLE `serie_v5` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `exercice_id` INTEGER NOT NULL, " +
+                "`ordre` INTEGER NOT NULL, `cree_le` INTEGER NOT NULL, `modifie_le` INTEGER, " +
+                "FOREIGN KEY(`exercice_id`) REFERENCES `exercice`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        )
+        db.execSQL("INSERT INTO `serie_v5` SELECT `id`, `exercice_id`, `ordre`, `cree_le`, `modifie_le` FROM `serie`")
+        db.execSQL("DROP TABLE `serie`")
+        db.execSQL("ALTER TABLE `serie_v5` RENAME TO `serie`")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_serie_exercice_id` ON `serie` (`exercice_id`)")
+        if (compteurSeries != null) {
+            db.execSQL("DELETE FROM `sqlite_sequence` WHERE `name` = 'serie'")
+            db.execSQL("INSERT INTO `sqlite_sequence` (`name`, `seq`) VALUES ('serie', ?)", arrayOf(compteurSeries))
+        }
+
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `palier` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `serie_id` INTEGER NOT NULL, " +
+                "`ordre` INTEGER NOT NULL, `poids_kg` REAL, `repetitions` INTEGER NOT NULL, `rir` INTEGER, " +
+                "FOREIGN KEY(`serie_id`) REFERENCES `serie`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_palier_serie_id` ON `palier` (`serie_id`)")
+        db.execSQL("INSERT INTO `palier` SELECT `id`, `serie_id`, `ordre`, `poids_kg`, `repetitions`, `rir` FROM `transit_palier`")
+        db.execSQL("DROP TABLE `transit_palier`")
+
+        db.execSQL("ALTER TABLE `palier_en_cours` ADD COLUMN `rir` INTEGER")
+        db.execSQL(
+            "UPDATE `palier_en_cours` SET `rir` = 0 WHERE EXISTS (SELECT 1 FROM `superset_en_cours` s " +
+                "WHERE s.`entrainement_id` = `palier_en_cours`.`entrainement_id` " +
+                "AND ((`palier_en_cours`.`role` = 'A' AND s.`echec_a` != 0) OR (`palier_en_cours`.`role` = 'B' AND s.`echec_b` != 0)))",
+        )
+
+        db.execSQL(
+            "CREATE TABLE `superset_en_cours_v5` (`entrainement_id` INTEGER NOT NULL, `superset_id` TEXT NOT NULL, " +
+                "`nom_a` TEXT NOT NULL, `nom_b` TEXT NOT NULL, `actif` TEXT NOT NULL, `poids_a` TEXT NOT NULL, " +
+                "`repetitions_a` TEXT NOT NULL, `poids_b` TEXT NOT NULL, `repetitions_b` TEXT NOT NULL, `rir_a` INTEGER, `rir_b` INTEGER, " +
+                "PRIMARY KEY(`entrainement_id`), " +
+                "FOREIGN KEY(`entrainement_id`) REFERENCES `entrainement`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        )
+        db.execSQL(
+            "INSERT INTO `superset_en_cours_v5` SELECT `entrainement_id`, `superset_id`, `nom_a`, `nom_b`, `actif`, `poids_a`, " +
+                "`repetitions_a`, `poids_b`, `repetitions_b`, CASE WHEN `echec_a` != 0 THEN 0 END, CASE WHEN `echec_b` != 0 THEN 0 END " +
+                "FROM `superset_en_cours`",
+        )
+        db.execSQL("DROP TABLE `superset_en_cours`")
+        db.execSQL("ALTER TABLE `superset_en_cours_v5` RENAME TO `superset_en_cours`")
+    }
+}

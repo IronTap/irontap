@@ -941,14 +941,15 @@ class SaisieViewModelTest {
         assertEquals(listOf("Curl", "12", "11"), reprise.valeurs(RoleSuperset.B))
     }
 
-    // --- Case « à l'échec » (DECISIONS.md) ---
+    // --- RIR par palier (DECISIONS.md) ---
 
-    private fun SaisieViewModel.echec(role: RoleSuperset = RoleSuperset.A) = champs(role).echec
+    private fun SaisieViewModel.rir(role: RoleSuperset = RoleSuperset.A) = champs(role).rir
 
-    private suspend fun echecs(id: Long) = dao.lireComplet(id)!!.exercices.map { e -> e.series.map { it.serie.echec } }
+    /** RIR de chaque palier, série par série, exercice par exercice. */
+    private suspend fun rirs(id: Long) = dao.lireComplet(id)!!.exercices.map { e -> e.series.map { s -> s.paliers.map { it.rir } } }
 
     @Test
-    fun `case a l'echec enregistree avec la serie puis decochee, gardee pendant une degressive, retablie par Annuler`() = runTest {
+    fun `RIR enregistre avec son palier puis efface, un par palier de degressive, retabli par Annuler`() = runTest {
         val id = creer()
         val vm = ecran(attendreToast = toastsPermanents)
         vm.enCours()
@@ -959,96 +960,113 @@ class SaisieViewModelTest {
         assertEquals("Série 1 enregistrée · 45 kg × 10", dernierToast())
 
         vm.saisir(poids = "45", repetitions = "10")
-        vm.basculerEchec()
-        vm.basculerEchec()
-        assertFalse(vm.echec())
-        vm.basculerEchec()
-        assertTrue(vm.echec())
+        vm.choisirRir(3)
+        vm.choisirRir(null)
+        assertNull(vm.rir())
+        vm.choisirRir(2)
+        assertEquals(2, vm.rir())
         vm.degressive()
         vm.paliersGardes(1)
         vm.ecrituresTerminees()
-        // La case vaut pour toute la série : elle reste cochée pour le palier suivant.
-        assertTrue(vm.echec())
+        // Chaque palier a son RIR : celui du palier suivant reste à choisir.
+        assertNull(vm.rir())
         vm.saisir(poids = "30", repetitions = "8")
+        vm.choisirRir(0)
         vm.enregistrer(Suite.NouvelleSerie)
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
         vm.ecrituresTerminees()
-        assertEquals("Série 2 enregistrée · 45 kg × 10 ↓ 30 kg × 8 (à l’échec)", dernierToast())
-        assertFalse(vm.echec())
-        assertEquals(listOf(listOf(false, true)), echecs(id))
+        assertEquals("Série 2 enregistrée · 45 kg × 10 (RIR 2) ↓ 30 kg × 8 (RIR 0)", dernierToast())
+        assertNull(vm.rir())
+        assertEquals(listOf(listOf(listOf(null), listOf(2, 0))), rirs(id))
 
-        // Annuler remet la case cochée avec les valeurs.
+        // Annuler remet le RIR du palier courant ; le palier gardé retrouve le sien.
         vm.annulerSerie()
         vm.paliersGardes(1)
         vm.ecrituresTerminees()
-        assertTrue(vm.echec())
-        assertEquals(listOf(listOf(false)), echecs(id))
+        assertEquals(0, vm.rir())
+        assertEquals(listOf(listOf(listOf(null))), rirs(id))
+        assertEquals(listOf(ValeursPalier(45.0, 10, 2)), dao.lireEnCoursComplet()?.paliersEnCours?.map { it.valeurs })
     }
 
     @Test
-    fun `nouvel exercice et dialogue 4a gardent la case, passer sans rien enregistrer la decoche`() = runTest {
+    fun `nouvel exercice et dialogue 4a gardent le RIR, passer sans rien enregistrer l'efface`() = runTest {
         val id = creer()
         val vm = ecran()
         vm.enCours()
         vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
-        vm.basculerEchec()
+        vm.choisirRir(1)
         vm.enregistrer(Suite.NouvelExercice)
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.entrainement?.nouvelExercice == true }
         vm.ecrituresTerminees()
-        assertFalse(vm.echec())
+        assertNull(vm.rir())
 
         vm.saisir(nom = "Fentes", repetitions = "10")
         vm.enregistrer(Suite.NouvelleSerie)
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.nomVerrouille == "Fentes" }
         vm.ecrituresTerminees()
-        // Champs vides et case cochée : rien à enregistrer, la case se décoche avec le passage.
-        vm.basculerEchec()
+        // Champs vides et RIR choisi : rien à enregistrer, le RIR s'efface avec le passage.
+        vm.choisirRir(4)
         vm.enregistrer(Suite.NouvelExercice)
         assertTrue(vm.formulaire.value.passage is PassageExercice.Simple)
         vm.confirmerPassage()
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.entrainement?.nouvelExercice == true }
         vm.ecrituresTerminees()
-        assertFalse(vm.echec())
+        assertNull(vm.rir())
 
         vm.saisir(nom = "Mollets", repetitions = "20")
-        vm.basculerEchec()
+        vm.choisirRir(5)
         vm.demanderFin()
         val dialogue = vm.formulaire.attendre { it.dialogue != null }.dialogue as DialogueFin.AvecSerie
-        assertTrue(dialogue.serie.echec)
+        assertEquals("PDC × 20 (RIR 5+)", dialogue.serie.description)
         vm.terminer(avecSerie = true)
         vm.etat.attendre { it == EtatSaisie.Aucun }
-        assertEquals(listOf(listOf(true), listOf(false), listOf(true)), echecs(id))
+        assertEquals(listOf(listOf(listOf(1)), listOf(listOf(null)), listOf(listOf(5))), rirs(id))
     }
 
     @Test
-    fun `superset, une case par onglet, memorisee, restauree apres un kill, decochee apres le tour`() = runTest {
+    fun `superset, un RIR par onglet, memorise, restaure apres un kill, efface apres le tour et la degressive`() = runTest {
         val id = creer()
-        val vm = ecran()
+        val vm = ecran(attendreToast = toastsPermanents)
         vm.enCours()
         vm.saisir(nom = "Élévations", poids = "8", repetitions = "15")
         vm.commencerSuperset()
         vm.enSuperset()
         vm.basculer(RoleSuperset.B)
         vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "11")
-        vm.basculerEchec()
-        assertTrue(vm.echec(RoleSuperset.B))
-        assertFalse(vm.echec(RoleSuperset.A))
-        // Mémorisée en base à chaque appui : l'appli peut être tuée.
-        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.echecB == true }
+        vm.choisirRir(1)
+        assertEquals(1, vm.rir(RoleSuperset.B))
+        assertNull(vm.rir(RoleSuperset.A))
+        // Mémorisé en base à chaque appui : l'appli peut être tuée.
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.rirB == 1 }
         vms.vider()
 
-        val reprise = ecran(BrouillonSaisie())
+        val reprise = ecran(BrouillonSaisie(), attendreToast = toastsPermanents)
         reprise.enSuperset()
         assertEquals(RoleSuperset.B, reprise.ongletActif)
-        assertTrue(reprise.echec(RoleSuperset.B))
-        assertFalse(reprise.echec(RoleSuperset.A))
+        assertEquals(1, reprise.rir(RoleSuperset.B))
+        assertNull(reprise.rir(RoleSuperset.A))
 
         reprise.enregistrer(Suite.NouvelleSerie)
         reprise.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
         reprise.ecrituresTerminees()
-        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 11 (à l’échec)", dernierToast())
-        assertFalse(reprise.echec(RoleSuperset.B))
-        assertEquals(false, dao.lireEnCoursComplet()?.superset?.echecB)
-        assertEquals(listOf(listOf(false), listOf(true)), echecs(id))
+        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 11 (RIR 1)", dernierToast())
+        assertNull(reprise.rir(RoleSuperset.B))
+        assertEquals(null, dao.lireEnCoursComplet()?.superset?.rirB)
+
+        // Dégressive sur A : le palier gardé emporte son RIR, l'onglet repart sans.
+        reprise.saisirOnglet(RoleSuperset.A, poids = "6", repetitions = "12")
+        reprise.choisirRir(2)
+        reprise.degressive()
+        reprise.paliersGardes(1)
+        reprise.ecrituresTerminees()
+        assertNull(reprise.rir(RoleSuperset.A))
+        reprise.saisirOnglet(RoleSuperset.A, poids = "4", repetitions = "10")
+        reprise.choisirRir(0)
+        reprise.saisirOnglet(RoleSuperset.B, poids = "10", repetitions = "10")
+        reprise.enregistrer(Suite.NouvelleSerie)
+        reprise.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
+        reprise.ecrituresTerminees()
+        assertEquals("Série 2 enregistrée · A 6 kg × 12 (RIR 2) ↓ 4 kg × 10 (RIR 0) · B 10 kg × 10", dernierToast())
+        assertEquals(listOf(listOf(listOf(null), listOf(2, 0)), listOf(listOf(1), listOf(null))), rirs(id))
     }
 }

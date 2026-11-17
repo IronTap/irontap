@@ -99,10 +99,10 @@ import app.irontap.ui.composants.BoutonPrincipal
 import app.irontap.ui.composants.BoutonRond
 import app.irontap.ui.composants.BoutonSecondaire
 import app.irontap.ui.composants.BoutonTexte
-import app.irontap.ui.composants.CaseEchec
 import app.irontap.ui.composants.ChampPoids
-import app.irontap.ui.composants.DESCRIPTION_ECHEC
 import app.irontap.ui.composants.ChampRepetitions
+import app.irontap.ui.composants.LIBELLE_RIR
+import app.irontap.ui.composants.PastillesRir
 import app.irontap.ui.composants.ChampTexte
 import app.irontap.ui.composants.DialogueNocturne
 import app.irontap.ui.composants.FenetreDialogue
@@ -129,8 +129,8 @@ interface ActionsSaisie {
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
 
-    /** Case « à l'échec » de la série en cours. */
-    fun basculerEchec()
+    /** Pastilles du RIR du palier en cours : la valeur choisie, ou `null` pour l'effacer. */
+    fun choisirRir(rir: Int?)
     fun enregistrer(suite: Suite)
     fun degressive()
     fun demanderFin()
@@ -181,7 +181,7 @@ fun EcranSaisie(onQuitter: () -> Unit, vm: SaisieViewModel = viewModel(factory =
                 nom = champs.nom,
                 poids = champs.poids,
                 repetitions = champs.repetitions,
-                echec = champs.echec,
+                rir = champs.rir,
                 realtime = vm::realtime,
                 actions = vm,
                 onglets = e.superset?.let {
@@ -208,10 +208,10 @@ fun ContenuSaisie(
     repetitions: TextFieldState,
     realtime: () -> Long,
     actions: ActionsSaisie,
-    /** Superset en cours : onglets A / B à la place du champ du nom (S3) ; [nom], [poids], [repetitions], [echec] sont ceux de l'onglet actif. */
+    /** Superset en cours : onglets A / B à la place du champ du nom (S3) ; [nom], [poids], [repetitions], [rir] sont ceux de l'onglet actif. */
     onglets: OngletsSuperset? = null,
-    /** Case « à l'échec » cochée pour la série en cours. */
-    echec: Boolean = false,
+    /** RIR choisi pour le palier en cours, `null` s'il ne l'est pas. */
+    rir: Int? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val superset = etat.etatSuperset?.takeIf { onglets != null }
@@ -296,20 +296,14 @@ fun ContenuSaisie(
                         RangeeAjouts(AjoutsPoids, actions::ajouterAuPoids)
                         Spacer(Modifier.height(12.dp))
                         LibelleChamp("Nombre de répétitions")
-                        // Case « à l'échec » à droite du champ, carrée à sa hauteur, comme le bouton Historique pour le nom.
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ChampRepetitions(repetitions, erreur = formulaire.erreurRepetitions, modifier = Modifier.weight(1f))
-                            CaseEchec(
-                                coche = echec,
-                                onBasculer = actions::basculerEchec,
-                                taille = 62.dp,
-                                description = if (superset != null) "$DESCRIPTION_ECHEC, exercice $actif" else DESCRIPTION_ECHEC,
-                            )
-                        }
+                        ChampRepetitions(repetitions, erreur = formulaire.erreurRepetitions)
                         RangeeAjouts(AjoutsRepetitions, actions::ajouterAuxRepetitions)
                         if (formulaire.erreurRepetitions) {
                             MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 6.dp))
                         }
+                        Spacer(Modifier.height(12.dp))
+                        LibelleChamp(LIBELLE_RIR)
+                        PastillesRir(rir, actions::choisirRir, precision = if (superset != null) "exercice $actif" else null)
                     }
                     Spacer(Modifier.height(16.dp))
                     Spacer(Modifier.weight(1f))
@@ -1004,6 +998,6 @@ private fun SectionSeance(seance: SeanceHistorique) {
     ) {
         Text(seance.entete, style = Typo.EnteteSeance, color = Couleurs.Neutre400)
         seance.superset?.let { EtiquetteSuperset("En superset avec $it") }
-        seance.series.forEach { PaliersEmpiles(it.principal, it.degressifs, Typo.TitreDetail, retrait = 2.dp, echec = it.echec) }
+        seance.series.forEach { PaliersEmpiles(it.principal, it.degressifs, Typo.TitreDetail, retrait = 2.dp, rirs = it.rirs) }
     }
 }

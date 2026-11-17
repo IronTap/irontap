@@ -7,8 +7,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasClickAction
@@ -83,7 +83,7 @@ class SaisieCaptureTest {
         override fun choisir(suggestion: Suggestion) = Unit
         override fun ajouterAuPoids(valeur: Int) = Unit
         override fun ajouterAuxRepetitions(valeur: Int) = Unit
-        override fun basculerEchec() = Unit
+        override fun choisirRir(rir: Int?) = Unit
         override fun enregistrer(suite: Suite) = Unit
         override fun degressive() = Unit
         override fun demanderFin() = Unit
@@ -114,7 +114,7 @@ class SaisieCaptureTest {
         paliersEnCours: List<PalierEnCours> = emptyList(),
         superset: SupersetEnCours? = null,
         onglets: OngletsSuperset? = null,
-        echec: Boolean = false,
+        rir: Int? = null,
     ) {
         compose.setContent {
             IronTapTheme {
@@ -130,7 +130,7 @@ class SaisieCaptureTest {
                         realtime = { 72_000 },
                         actions = actions,
                         onglets = onglets,
-                        echec = echec,
+                        rir = rir,
                     )
                 }
             }
@@ -400,8 +400,8 @@ class SaisieCaptureTest {
         ExerciceAvecSeries(Exercice(4, 1, "Curl marteau", 4, "s1", RoleSuperset.B), listOf(serieDeTest(4, 4, 1, 12.0, 12, t0))),
     )
 
-    private fun supersetB(formulaire: Formulaire = Formulaire(), echec: Boolean = false) = afficher(
-        echec = echec,
+    private fun supersetB(formulaire: Formulaire = Formulaire(), rir: Int? = null) = afficher(
+        rir = rir,
         exercices = supersetTour2,
         entrainement = epaules.copy(nouvelExercice = false),
         chrono = EtatChrono(1, Etat.EnCours, demarreA = 72_000 - 4_000),
@@ -462,63 +462,68 @@ class SaisieCaptureTest {
         captureScreenRoboImage()
     }
 
-    // --- Case « à l'échec » (DECISIONS.md) ---
+    // --- RIR (DECISIONS.md) ---
 
-    /** Série 3 du tirage : 45 kg × 10 saisis, case cochée à droite des répétitions, carrée à la hauteur du champ. */
+    /** Série 3 du tirage : 45 kg × 10 saisis, RIR 2 choisi dans les pastilles, sous les boutons des répétitions. */
     @Test
-    fun caseEchec() {
-        var appuis = 0
+    fun pastillesRir() {
+        val choix = mutableListOf<Int?>()
         afficher(
             exercices = listOf(developpe, tirageSerie3),
             poids = "45",
             repetitions = "10",
-            echec = true,
+            rir = 2,
             actions = object : SansAction() {
-                override fun basculerEchec() { appuis++ }
+                override fun choisirRir(rir: Int?) {
+                    choix += rir
+                }
             },
         )
-        compose.onNode(hasContentDescription("À l’échec"))
-            .assertIsOn()
-            .assertWidthIsEqualTo(62.dp)
-            .assertHeightIsEqualTo(62.dp)
+        compose.onNode(hasText("Répétitions en réserve (RIR)")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("RIR 2")).assertIsSelected().assertHeightIsEqualTo(48.dp)
+        listOf("RIR 0", "RIR 1", "RIR 3", "RIR 4", "RIR 5+").forEach { compose.onNode(hasContentDescription(it)).assertIsNotSelected() }
         compose.onRoot().captureRoboImage()
-        compose.onNode(hasContentDescription("À l’échec")).performClick()
-        assertEquals(1, appuis)
+        // Une autre pastille la remplace ; la pastille choisie s'efface.
+        compose.onNode(hasContentDescription("RIR 5+")).performClick()
+        compose.onNode(hasContentDescription("RIR 2")).performClick()
+        assertEquals(listOf(5, null), choix)
     }
 
-    /** Case décochée, la plupart du temps. */
+    /** Aucun RIR choisi, la plupart du temps : les actions restent visibles sur l'écran de référence. */
     @Test
-    fun caseEchecDecochee() {
+    fun pastillesRirSansChoix() {
         afficher(exercices = listOf(developpe, tirageSerie3), poids = "45", repetitions = "10")
-        compose.onNode(hasContentDescription("À l’échec")).assertIsOff()
+        compose.onAllNodes(hasContentDescription("RIR", substring = true)).fetchSemanticsNodes().also { assertEquals(6, it.size) }
+        listOf("RIR 0", "RIR 5+").forEach { compose.onNode(hasContentDescription(it)).assertIsNotSelected() }
+        compose.onNode(hasClickAction() and hasText("Dégressive")).assertIsDisplayed()
         compose.onRoot().captureRoboImage()
     }
 
-    /** Superset : la case suit l'onglet actif. */
+    /** Superset : les pastilles suivent l'onglet actif. */
     @Test
-    fun caseEchecSuperset() {
-        supersetB(echec = true)
-        compose.onNode(hasContentDescription("À l’échec, exercice B")).assertIsOn()
+    fun pastillesRirSuperset() {
+        supersetB(rir = 1)
+        compose.onNode(hasContentDescription("RIR 1, exercice B")).assertIsSelected()
         compose.onRoot().captureRoboImage()
     }
 
-    /** 3g : batterie vide après les séries à l'échec, dégressive comprise. */
+    /** 3g : badge « RIR » après chaque palier qui en a un, dégressive comprise. */
     @Test
-    fun historiqueEchec() {
+    fun historiqueRir() {
         val seances = listOf(
             SeanceHistorique(
                 "Dos / biceps — 12/10/2026",
                 listOf(
                     LigneHistorique("10 × 10 kg"),
                     LigneHistorique("6 × 20 kg"),
-                    LigneHistorique("10 × 25 kg"),
-                    LigneHistorique("10 × 25 kg"),
-                    LigneHistorique("10 × 25 kg", echec = true),
+                    LigneHistorique("10 × 25 kg", rirs = listOf(3)),
+                    LigneHistorique("10 × 25 kg", rirs = listOf(2)),
+                    LigneHistorique("10 × 25 kg", rirs = listOf(0)),
                 ),
             ),
             SeanceHistorique(
                 "Dos / biceps — 05/10/2026",
-                listOf(LigneHistorique("10 × 25 kg", echec = true), LigneHistorique("8 × 25 kg", listOf("6 × 15 kg"), echec = true)),
+                listOf(LigneHistorique("10 × 25 kg", rirs = listOf(5)), LigneHistorique("8 × 25 kg", listOf("6 × 15 kg"), rirs = listOf(1, 0))),
             ),
         )
         afficher(
@@ -527,8 +532,9 @@ class SaisieCaptureTest {
             formulaire = Formulaire(historique = HistoriqueExercice("Tirage vertical", seances)),
         )
         compose.waitForIdle()
-        // Trois repères dans la popup, et la case de l'écran dessous.
-        compose.onAllNodes(hasContentDescription("À l’échec"), useUnmergedTree = true).assertCountEquals(4)
+        listOf("RIR 3" to 1, "RIR 2" to 1, "RIR 0" to 2, "RIR 5+" to 1, "RIR 1" to 1).forEach { (texte, nombre) ->
+            compose.onAllNodes(hasText(texte), useUnmergedTree = true).assertCountEquals(nombre)
+        }
         captureScreenRoboImage()
     }
 }

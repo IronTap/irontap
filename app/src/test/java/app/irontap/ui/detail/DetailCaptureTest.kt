@@ -4,8 +4,8 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHeightIsEqualTo
-import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -94,7 +94,7 @@ class DetailCaptureTest {
     private object SansEdition : ActionsEdition {
         override fun ajouterAuPoids(valeur: Int) = Unit
         override fun ajouterAuxRepetitions(valeur: Int) = Unit
-        override fun basculerEchec() = Unit
+        override fun choisirRir(rir: Int?) = Unit
         override fun ajouterPalier() = 0L
         override fun retirerPalier(cle: Long) = Unit
         override fun enregistrer() = Unit
@@ -217,7 +217,7 @@ class DetailCaptureTest {
         compose.waitForIdle()
         // Le palier 1 ne se retire pas : un seul ✕ par palier dégressif.
         compose.onAllNodes(hasContentDescription("Retirer ce palier")).assertCountEquals(2)
-        compose.onNode(hasContentDescription("Poids du palier 1")).assertWidthIsEqualTo(100.dp)
+        compose.onNode(hasContentDescription("Poids du palier 1")).assertWidthIsEqualTo(92.dp)
         val large = compose.onNode(hasContentDescription("Poids du palier 3")).fetchSemanticsNode().size.width
         assertTrue(large > compose.onNode(hasContentDescription("Poids du palier 1")).fetchSemanticsNode().size.width)
         captureScreenRoboImage()
@@ -271,7 +271,6 @@ class DetailCaptureTest {
                     onEnregistrer = {},
                     onSupprimer = {},
                     onFermer = {},
-                    onBasculerEchec = {},
                 )
             }
         }
@@ -281,93 +280,105 @@ class DetailCaptureTest {
         captureScreenRoboImage()
     }
 
-    // --- Case « à l'échec » (DECISIONS.md) ---
+    // --- RIR (DECISIONS.md) ---
 
-    /** [complet] dont les séries [ids] sont à l'échec. */
-    private fun marquer(complet: EntrainementComplet, vararg ids: Long) = complet.copy(
+    /** [complet] où les paliers des séries de [rirs] (identifiant → RIR de chaque palier, le principal d'abord) ont ces RIR. */
+    private fun noter(complet: EntrainementComplet, rirs: Map<Long, List<Int?>>) = complet.copy(
         exercices = complet.exercices.map { e ->
-            e.copy(series = e.series.map { if (it.serie.id in ids) it.copy(serie = it.serie.copy(echec = true)) else it })
+            e.copy(
+                series = e.series.map { serie ->
+                    val valeurs = rirs[serie.serie.id] ?: return@map serie
+                    serie.copy(paliers = serie.paliers.mapIndexed { index, palier -> palier.copy(rir = valeurs.getOrNull(index)) })
+                },
+            )
         },
     )
 
-    /** Batterie vide après la valeur des séries à l'échec, dégressive comprise. */
+    /** Badge « RIR » après chaque palier qui en a un, dégressive comprise. */
     @Test
-    fun echec() {
+    fun rir() {
+        val note = noter(complet, mapOf(tirage.series[1].serie.id to listOf(2), tirage.series[2].serie.id to listOf(1, 0, 5)))
         compose.setContent {
-            IronTapTheme {
-                ContenuDetail(marquer(complet, tirage.series[1].serie.id, tirage.series[2].serie.id), null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction())
-            }
+            IronTapTheme { ContenuDetail(note, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
         }
-        compose.onAllNodes(hasContentDescription("À l’échec"), useUnmergedTree = true).assertCountEquals(2)
+        listOf("RIR 2", "RIR 1", "RIR 0", "RIR 5+").forEach { compose.onAllNodes(hasText(it), useUnmergedTree = true).assertCountEquals(1) }
         compose.onRoot().captureRoboImage()
     }
 
-    /** Cases étroites d'un tour : la valeur passe à la ligne plutôt que de chasser la batterie. */
+    /** Cases étroites d'un tour : la valeur passe à la ligne plutôt que de chasser le badge. */
     @Test
-    fun echecSuperset() {
-        val marque = marquer(epaules, epaules.exercices[1].series[2].serie.id, epaules.exercices[2].series[1].serie.id)
+    fun rirSuperset() {
+        val note = noter(epaules, mapOf(epaules.exercices[1].series[2].serie.id to listOf(3), epaules.exercices[2].series[1].serie.id to listOf(5, 0)))
         compose.setContent {
-            IronTapTheme { ContenuDetail(marque, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
+            IronTapTheme { ContenuDetail(note, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
         }
-        compose.onAllNodes(hasContentDescription("À l’échec"), useUnmergedTree = true).assertCountEquals(2)
+        compose.onAllNodes(hasText("RIR 3"), useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodes(hasText("RIR 5+"), useUnmergedTree = true).assertCountEquals(1)
         compose.onRoot().captureRoboImage()
     }
 
+    /** Écran 7 : pastilles du RIR sous les boutons des répétitions, RIR de la série choisi. */
     @Test
-    fun editionSerieEchec() {
+    fun editionSerieRir() {
         afficher {
             FeuilleEdition(
-                edition = EditionSerie(tirage.exercice, tirage.series[1], echec = true),
-                paliers = listOf(ChampsPalier(0, "45", "12")),
+                edition = EditionSerie(tirage.exercice, tirage.series[1]),
+                paliers = listOf(ChampsPalier(0, "45", "12", "2")),
                 paliersEnErreur = emptySet(),
                 erreurEnregistrement = false,
                 actions = SansEdition,
             )
         }
         compose.waitForIdle()
-        compose.onNode(hasContentDescription("À l’échec")).assertIsOn().assertWidthIsEqualTo(62.dp).assertHeightIsEqualTo(62.dp)
+        compose.onNode(hasContentDescription("RIR 2")).assertIsSelected().assertHeightIsEqualTo(48.dp)
+        compose.onNode(hasContentDescription("RIR 0")).assertIsNotSelected()
         captureScreenRoboImage()
     }
 
+    /** 7·D : un RIR au bout de chaque ligne, « 5 » affiché « 5+ », « RIR » tant qu'il est vide ; le ✕ tient sur 360 dp. */
     @Test
-    fun editionDegressiveEchec() {
+    fun editionDegressiveRir() {
         afficher {
             FeuilleEdition(
-                edition = EditionSerie(tirage.exercice, tirage.series[2], tableau = true, echec = true),
-                paliers = listOf(ChampsPalier(0, "45", "10"), ChampsPalier(1, "30", "8"), ChampsPalier(2, "20", "6")),
+                edition = EditionSerie(tirage.exercice, tirage.series[2], tableau = true),
+                paliers = listOf(ChampsPalier(0, "45", "10", "2"), ChampsPalier(1, "30", "8"), ChampsPalier(2, "20", "6", "5")),
                 paliersEnErreur = emptySet(),
                 erreurEnregistrement = false,
                 actions = SansEdition,
             )
         }
         compose.waitForIdle()
-        compose.onNode(hasContentDescription("À l’échec")).assertIsOn()
+        (1..3).forEach { compose.onNode(hasContentDescription("RIR du palier $it")).assertIsDisplayed() }
+        compose.onAllNodes(hasContentDescription("Retirer ce palier")).assertCountEquals(2)
+        compose.onAllNodes(hasContentDescription("Retirer ce palier")).fetchSemanticsNodes().forEach { noeud ->
+            assertEquals(48f, with(compose.density) { noeud.size.width.toDp().value }, 0.5f)
+        }
         captureScreenRoboImage()
     }
 
+    /** Feuille d'un tour : RIR à droite des répétitions de A et de B, « RIR » tant qu'il est vide. */
     @Test
-    fun tourEchec() {
+    fun tourRir() {
         val a = epaules.exercices[1].exercice
         val b = epaules.exercices[2].exercice
         compose.setContent {
             IronTapTheme {
                 ContenuDetail(epaules, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction())
                 FeuilleTour(
-                    edition = EditionTour(a, b, tour = 2, existant = true, series = emptyMap(), echecs = setOf(RoleSuperset.A)),
-                    champs = mapOf(RoleSuperset.A to ChampsPalier(-1, "8", "12"), RoleSuperset.B to ChampsPalier(-2, "12", "10")),
+                    edition = EditionTour(a, b, tour = 2, existant = true, series = emptyMap()),
+                    champs = mapOf(RoleSuperset.A to ChampsPalier(-1, "8", "12", "1"), RoleSuperset.B to ChampsPalier(-2, "12", "10")),
                     paliersEnErreur = emptySet(),
                     erreurEnregistrement = false,
                     enregistrable = true,
                     onEnregistrer = {},
                     onSupprimer = {},
                     onFermer = {},
-                    onBasculerEchec = {},
                 )
             }
         }
         compose.waitForIdle()
-        compose.onNode(hasContentDescription("À l’échec, exercice A")).assertIsOn()
-        compose.onNode(hasContentDescription("À l’échec, exercice B")).assertIsOff()
+        compose.onNode(hasContentDescription("RIR de l’exercice A")).assertIsDisplayed()
+        compose.onNode(hasContentDescription("RIR de l’exercice B")).assertIsDisplayed()
         captureScreenRoboImage()
     }
 }

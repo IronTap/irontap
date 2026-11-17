@@ -120,8 +120,8 @@ sealed interface EtatSaisie {
         /** Valeurs des paliers déjà gardés hors superset, dans l'ordre. */
         val paliersPrecedents = paliersEnCours.filter { it.role == null }.map { it.valeurs }
 
-        /** En-tête en mode dégressive (3·D A2, A3) : « 50 kg × 10 ↓ 30 kg × 8 ↓ … », `null` hors dégressive. */
-        val chaineDegressive = if (paliersPrecedents.isEmpty()) null else decrireSerie(paliersPrecedents) + " ↓ …"
+        /** En-tête en mode dégressive (3·D A2, A3) : « 50 kg × 10 ↓ 30 kg × 8 ↓ … », sans les RIR, `null` hors dégressive. */
+        val chaineDegressive = if (paliersPrecedents.isEmpty()) null else decrireSerie(paliersPrecedents, avecRir = false) + " ↓ …"
 
         companion object {
             fun de(enCours: EntrainementEnCours) =
@@ -132,10 +132,10 @@ sealed interface EtatSaisie {
 
 /**
  * Série prête à être enregistrée : paliers gardés par « Dégressive » ([precedents]), puis palier courant
- * ([courant], absent quand le dialogue 4a ne retient que les paliers gardés). [nom] est ignoré si le nom
- * est verrouillé. [echec] : série à l'échec.
+ * ([courant], RIR compris, absent quand le dialogue 4a ne retient que les paliers gardés). [nom] est ignoré si le nom
+ * est verrouillé.
  */
-data class SerieSaisie(val nom: String, val precedents: List<ValeursPalier>, val courant: ValeursPalier?, val echec: Boolean = false) {
+data class SerieSaisie(val nom: String, val precedents: List<ValeursPalier>, val courant: ValeursPalier?) {
     val description get() = decrireSerie(precedents + listOfNotNull(courant))
 }
 
@@ -222,13 +222,13 @@ class BrouillonSaisie {
         actif = RoleSuperset.A
     }
 
-    /** Poids et répétitions vidés, le nom aussi si [nom] ; la case « à l'échec » est décochée, sauf si [garderEchec] (dégressive). */
-    fun viderOnglet(role: RoleSuperset, nom: Boolean, garderEchec: Boolean = false) {
+    /** Poids, répétitions et RIR vidés, le nom aussi si [nom]. */
+    fun viderOnglet(role: RoleSuperset, nom: Boolean) {
         val champs = champs(role)
         if (nom) champs.nom.clearText()
         champs.poids.clearText()
         champs.repetitions.clearText()
-        if (!garderEchec) champs.echec = false
+        champs.rir = null
     }
 
     /** Superset mémorisé en base (appli tuée) : noms, valeurs saisies et onglet actif. */
@@ -239,21 +239,21 @@ class BrouillonSaisie {
         ongletB.nom.setTextAndPlaceCursorAtEnd(superset.nomB)
         ongletB.poids.setTextAndPlaceCursorAtEnd(superset.poidsB)
         ongletB.repetitions.setTextAndPlaceCursorAtEnd(superset.repetitionsB)
-        principal.echec = superset.echecA
-        ongletB.echec = superset.echecB
+        principal.rir = superset.rirA
+        ongletB.rir = superset.rirB
         actif = superset.actif
     }
 
-    /** Texte des champs et case « à l'échec » des deux onglets, et onglet actif, à remettre si l'enregistrement est annulé. */
-    data class Copie(val a: List<String>, val b: List<String>, val actif: RoleSuperset, val echecA: Boolean = false, val echecB: Boolean = false)
+    /** Texte des champs et RIR des deux onglets, et onglet actif, à remettre si l'enregistrement est annulé. */
+    data class Copie(val a: List<String>, val b: List<String>, val actif: RoleSuperset, val rirA: Int? = null, val rirB: Int? = null)
 
-    fun copie() = Copie(principal.textes(), ongletB.textes(), actif, principal.echec, ongletB.echec)
+    fun copie() = Copie(principal.textes(), ongletB.textes(), actif, principal.rir, ongletB.rir)
 
     fun retablir(copie: Copie) {
         principal.remplir(copie.a)
         ongletB.remplir(copie.b)
-        principal.echec = copie.echecA
-        ongletB.echec = copie.echecB
+        principal.rir = copie.rirA
+        ongletB.rir = copie.rirB
         actif = copie.actif
     }
 
@@ -271,8 +271,8 @@ class BrouillonSaisie {
         repetitionsA = principal.repetitions.text.toString(),
         poidsB = ongletB.poids.text.toString(),
         repetitionsB = ongletB.repetitions.text.toString(),
-        echecA = principal.echec,
-        echecB = ongletB.echec,
+        rirA = principal.rir,
+        rirB = ongletB.rir,
     )
 }
 
@@ -403,11 +403,11 @@ class SaisieViewModel(
     override fun ajouterAuxRepetitions(valeur: Int) =
         actifs.repetitions.let { it.setTextAndPlaceCursorAtEnd(ajouterRepetitions(it.text.toString(), valeur)) }
 
-    /** Case « à l'échec » de la série en cours (onglet actif d'un superset, mémorisé avec lui). */
-    override fun basculerEchec() {
-        // Pendant un enregistrement, qui décoche la case : l'appui serait perdu ou s'appliquerait à la série suivante.
+    /** Pastilles du RIR du palier en cours (onglet actif d'un superset, mémorisé avec lui) ; `null` l'efface. */
+    override fun choisirRir(rir: Int?) {
+        // Pendant un enregistrement, qui efface le RIR : l'appui serait perdu ou s'appliquerait au palier suivant.
         if (enregistrement?.isActive == true) return
-        actifs.echec = !actifs.echec
+        actifs.rir = rir
         (etat.value as? EtatSaisie.EnCours)?.superset?.let(::memoriser)
     }
 
@@ -472,7 +472,7 @@ class SaisieViewModel(
                 val (valeur, annulation) = enregistree
                 dernier = Dernier(annulation, copie, valeur.serie.ordre)
                 // Paliers lus en base : ceux d'une dégressive commencée avant un retour à l'accueil compris.
-                afficherToast("Série ${valeur.serie.ordre} enregistrée · ${decrireSerie(valeur.valeurs, valeur.serie.echec)}", annulable = true)
+                afficherToast("Série ${valeur.serie.ordre} enregistrée · ${decrireSerie(valeur.valeurs)}", annulable = true)
             } else if (serie.nom.isBlank()) {
                 // Écran en retard sur la base : le nom était requis alors qu'il semblait verrouillé.
                 _formulaire.update { it.copy(erreurNom = true) }
@@ -482,7 +482,8 @@ class SaisieViewModel(
 
     /**
      * « Dégressive » (spec §4.3.9) : même validation que « Nouvelle série ». Le palier est gardé pour la série
-     * en cours, poids et répétitions sont vidés, le nom se verrouille ; ni le chrono ni le numéro de série ne changent.
+     * en cours avec son RIR, poids, répétitions et RIR sont vidés, le nom se verrouille ; ni le chrono ni le numéro de
+     * série ne changent.
      */
     override fun degressive() {
         val enCours = etat.value as? EtatSaisie.EnCours ?: return
@@ -492,10 +493,10 @@ class SaisieViewModel(
         val palier = checkNotNull(serie.courant)
         retirerAnnulation()
         enregistrement = ecrire {
-            val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, serie.nom, palier.poidsKg, palier.repetitions)
+            val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, serie.nom, palier.poidsKg, palier.repetitions, rir = palier.rir)
             if (garde != null) {
-                // La case vaut pour toute la série : elle reste cochée pour les paliers suivants.
-                vider(Suite.NouvelleSerie, garderEchec = true)
+                // Chaque palier a son RIR : celui du palier suivant reste à choisir.
+                vider(Suite.NouvelleSerie)
             } else if (serie.nom.isBlank()) {
                 _formulaire.update { it.copy(erreurNom = true) }
             }
@@ -508,7 +509,7 @@ class SaisieViewModel(
         val repetitions = lireRepetitions(repetitions.text.toString())
         _formulaire.update { it.copy(erreurNom = nomManquant, erreurRepetitions = repetitions == null) }
         if (nomManquant || repetitions == null) return null
-        return SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, ValeursPalier(lirePoids(poids.text.toString()), repetitions), brouillon.principal.echec)
+        return SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, ValeursPalier(lirePoids(poids.text.toString()), repetitions, brouillon.principal.rir))
     }
 
     private suspend fun sauver(enCours: EtatSaisie.EnCours, serie: SerieSaisie, suite: Suite): Annulable<SerieAvecPaliers>? =
@@ -520,14 +521,14 @@ class SaisieViewModel(
             suite = suite,
             maintenant = horloge.maintenant(),
             realtime = horloge.realtime(),
-            echec = serie.echec,
+            rir = serie.courant?.rir,
         )
 
-    /** Champs vidés après une série ([suite]) ou un palier (comme « Nouvelle série », [garderEchec]). */
-    private fun vider(suite: Suite, garderEchec: Boolean = false) {
+    /** Champs vidés, RIR compris, après une série ([suite]) ou un palier (comme « Nouvelle série »). */
+    private fun vider(suite: Suite) {
         poids.clearText()
         repetitions.clearText()
-        if (!garderEchec) brouillon.principal.echec = false
+        brouillon.principal.rir = null
         if (suite == Suite.NouvelExercice) nom.clearText()
         // Après « Nouvelle série » ou « Dégressive », le nom reste dans le champ le temps qu'il se verrouille : pas de suggestions.
         val choisi = if (suite == Suite.NouvelleSerie) nom.text.toString() else null
@@ -634,7 +635,7 @@ class SaisieViewModel(
             _formulaire.update { it.copy(erreurNom = nomManquant, erreurRepetitions = repetitions == null, nomChoisi = null) }
             return null
         }
-        return SaisieOnglet(champs.nom.text.toString(), lirePoids(champs.poids.text.toString()), repetitions, champs.echec)
+        return SaisieOnglet(champs.nom.text.toString(), lirePoids(champs.poids.text.toString()), repetitions, champs.rir)
     }
 
     /**
@@ -685,9 +686,9 @@ class SaisieViewModel(
     private fun messageTour(tour: TourEnregistre): String {
         val series = tour.series
         return if (series.size == 1) {
-            series.entries.single().let { (role, serie) -> "Série ${tour.tour} enregistrée · $role seul · ${decrireSerie(serie.valeurs, serie.serie.echec)}" }
+            series.entries.single().let { (role, serie) -> "Série ${tour.tour} enregistrée · $role seul · ${decrireSerie(serie.valeurs)}" }
         } else {
-            "Série ${tour.tour} enregistrée · " + series.entries.joinToString(" · ") { (role, serie) -> "$role ${decrireSerie(serie.valeurs, serie.serie.echec)}" }
+            "Série ${tour.tour} enregistrée · " + series.entries.joinToString(" · ") { (role, serie) -> "$role ${decrireSerie(serie.valeurs)}" }
         }
     }
 
@@ -723,9 +724,9 @@ class SaisieViewModel(
         val repetitions = checkNotNull(saisie.repetitions)
         retirerAnnulation()
         enregistrement = ecrire {
-            val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, saisie.nom, saisie.poidsKg, repetitions, role)
+            val garde = dao.ajouterPalierEnCours(enCours.entrainement.id, saisie.nom, saisie.poidsKg, repetitions, role, saisie.rir)
             if (garde != null) {
-                brouillon.viderOnglet(role, nom = false, garderEchec = true)
+                brouillon.viderOnglet(role, nom = false)
                 _formulaire.update { it.copy(erreurNom = false, erreurRepetitions = false, nomChoisi = brouillon.champs(role).nom.text.toString()) }
                 enCours.superset?.let { dao.memoriserSuperset(brouillon.instantane(it)) }
             }
@@ -778,11 +779,11 @@ class SaisieViewModel(
                 _formulaire.update { it.copy(dialogue = dialogueFinSuperset(superset)) }
                 return@launch
             }
-            val courant = lireRepetitions(repetitions.text.toString())?.let { ValeursPalier(lirePoids(poids.text.toString()), it) }
+            val courant = lireRepetitions(repetitions.text.toString())?.let { ValeursPalier(lirePoids(poids.text.toString()), it, brouillon.principal.rir) }
             // Une dégressive en attente fait proposer sa série (spec §4.3.9), avec le palier courant s'il est valide.
             val remplie = (enCours.verrouille || nom.text.isNotBlank()) && (courant != null || enCours.paliersEnCours.isNotEmpty())
             val dialogue = if (remplie) {
-                DialogueFin.AvecSerie(SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, courant, brouillon.principal.echec))
+                DialogueFin.AvecSerie(SerieSaisie(nom.text.toString(), enCours.paliersPrecedents, courant))
             } else {
                 DialogueFin.Simple
             }
@@ -797,12 +798,12 @@ class SaisieViewModel(
     private fun dialogueFinSuperset(superset: EtatSuperset): DialogueFin {
         val saisis = RoleSuperset.entries.mapNotNull { role ->
             val champs = brouillon.champs(role)
-            val courant = lireRepetitions(champs.repetitions.text.toString())?.let { ValeursPalier(lirePoids(champs.poids.text.toString()), it) }
+            val courant = lireRepetitions(champs.repetitions.text.toString())?.let { ValeursPalier(lirePoids(champs.poids.text.toString()), it, champs.rir) }
             val nomPresent = superset.verrouille(role) || champs.nom.text.isNotBlank()
             if (!nomPresent || (courant == null && superset.paliers(role).isEmpty())) return@mapNotNull null
             Triple(
                 role,
-                SaisieOnglet(champs.nom.text.toString(), courant?.poidsKg, courant?.repetitions, champs.echec),
+                SaisieOnglet(champs.nom.text.toString(), courant?.poidsKg, courant?.repetitions, courant?.rir),
                 decrireSerie(superset.paliers(role) + listOfNotNull(courant)),
             )
         }
@@ -829,7 +830,7 @@ class SaisieViewModel(
                 !avecSerie || dialogue == DialogueFin.Simple -> dao.terminer(id, horloge.maintenant())
                 dialogue is DialogueFin.AvecSerie -> dialogue.serie.let { serie ->
                     val courant = serie.courant
-                    dao.enregistrerSerieEtTerminer(id, serie.nom, courant?.poidsKg, courant?.repetitions, horloge.maintenant(), horloge.realtime(), serie.echec)
+                    dao.enregistrerSerieEtTerminer(id, serie.nom, courant?.poidsKg, courant?.repetitions, horloge.maintenant(), horloge.realtime(), courant?.rir)
                 }
                 dialogue is DialogueFin.SupersetComplet ->
                     dao.enregistrerTourEtTerminer(id, dialogue.a, dialogue.b, horloge.maintenant(), horloge.realtime())

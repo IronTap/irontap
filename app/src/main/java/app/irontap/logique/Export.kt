@@ -38,8 +38,8 @@ internal fun numerosSupersets(exercices: List<ExerciceAvecSeries>): Map<String, 
 
 /**
  * Export lisible (spec §5) : par entraînement, « date — libellé », puis chaque exercice et ses séries
- * en retrait, les paliers d'une dégressive sur la même ligne (« 45 kg × 10 ↓ 30 kg × 8 »), « (à l’échec) » après
- * une série à l'échec.
+ * en retrait, les paliers d'une dégressive sur la même ligne (« 45 kg × 10 ↓ 30 kg × 8 »), chacun suivi de son RIR
+ * s'il est noté (« 45 kg × 10 (RIR 2) »).
  * Un superset (DECISIONS.md) : « Superset : A + B », puis une ligne par tour, « A 8 kg × 15 · B 12 kg × 12 »,
  * « — » pour une série absente, comme la carte du détail.
  * Une ligne vide entre les exercices, deux entre les entraînements.
@@ -51,7 +51,7 @@ fun exporterTexte(entrainements: List<EntrainementComplet>): String = entraineme
         complet.exercices.mapNotNull { exercice ->
             val supersetId = exercice.exercice.supersetId?.takeIf { it in supersets }
             when {
-                supersetId == null -> (listOf(exercice.exercice.nom) + exercice.series.map { "  " + decrireSerie(it.valeurs, it.serie.echec) }).joinToString("\n")
+                supersetId == null -> (listOf(exercice.exercice.nom) + exercice.series.map { "  " + decrireSerie(it.valeurs) }).joinToString("\n")
                 // A et B dans un même bloc, à la place de A.
                 exercice.exercice.supersetRole == RoleSuperset.A -> texteSuperset(complet.exercices.filter { it.exercice.supersetId == supersetId })
                 else -> null
@@ -65,7 +65,7 @@ private fun texteSuperset(membres: List<ExerciceAvecSeries>): String {
     val tours = membres.flatMap { it.series }.map { it.serie.ordre }.distinct().sorted()
     val lignes = tours.map { tour ->
         "  " + parRole.entries.joinToString(" · ") { (role, exercice) ->
-            "$role " + (exercice.series.firstOrNull { it.serie.ordre == tour }?.let { decrireSerie(it.valeurs, it.serie.echec) } ?: "—")
+            "$role " + (exercice.series.firstOrNull { it.serie.ordre == tour }?.let { decrireSerie(it.valeurs) } ?: "—")
         }
     }
     return (listOf("Superset : " + parRole.values.joinToString(" + ") { it.exercice.nom }) + lignes).joinToString("\n")
@@ -74,12 +74,12 @@ private fun texteSuperset(membres: List<ExerciceAvecSeries>): String {
 /**
  * Colonnes du CSV : celles de la spec §5, puis `entrainement` (numéro de l'entraînement dans le fichier : deux séances
  * du même jour au même libellé restent distinctes), `superset` (numéro du superset dans l'entraînement) et
- * `role_superset` (A ou B), vides hors superset, et `echec` (1 pour une série à l'échec, vide sinon, répété sur
- * chacun de ses paliers) (DECISIONS.md).
+ * `role_superset` (A ou B), vides hors superset, et `rir` (RIR du palier, de 0 à 5, vide s'il n'est pas noté)
+ * (DECISIONS.md).
  */
 internal val EnteteCsv = listOf(
     "date", "libelle_entrainement", "exercice", "ordre_exercice", "ordre_serie", "palier", "poids_kg", "repetitions",
-    "entrainement", "superset", "role_superset", "echec",
+    "entrainement", "superset", "role_superset", "rir",
 )
 
 /**
@@ -108,7 +108,7 @@ fun exporterCsv(entrainements: List<EntrainementComplet>): String = buildString 
                         (index + 1).toString(),
                         superset?.toString().orEmpty(),
                         exercice.exercice.supersetRole?.takeIf { superset != null }?.name.orEmpty(),
-                        if (serie.echec) "1" else "",
+                        palier.rir?.toString().orEmpty(),
                     )
                     append(champs.joinToString(";")).append("\r\n")
                 }

@@ -19,10 +19,9 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * Migrations v1 → v2 (séries dégressives), v2 → v3 (supersets) et v3 → v4 (marqueur « à l'échec ») : une base est
- * créée avec le schéma exporté de sa
- * version (`schemas/…/N.json`), puis ouverte par Room, qui applique les migrations et vérifie que le résultat est
- * exactement le schéma courant.
+ * Migrations v1 → v2 (séries dégressives), v2 → v3 (supersets), v3 → v4 (marqueur « à l'échec ») et v4 → v5 (RIR par
+ * palier) : une base est créée avec le schéma exporté de sa version (`schemas/…/N.json`), puis ouverte par Room, qui
+ * applique les migrations et vérifie que le résultat est exactement le schéma courant.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -65,7 +64,7 @@ class MigrationTest {
 
     private fun ouvrir(): EntrainementDao =
         Room.databaseBuilder(context, BaseIronTap::class.java, fichier.name)
-            .addMigrations(Migration1Vers2, Migration2Vers3, Migration3Vers4)
+            .addMigrations(Migration1Vers2, Migration2Vers3, Migration3Vers4, Migration4Vers5)
             .allowMainThreadQueries()
             .build()
             .also { base = it }
@@ -149,7 +148,7 @@ class MigrationTest {
     }
 
     @Test
-    fun `v3 vers v4, aucune serie a l'echec et le superset en cours conserve`() = runTest {
+    fun `v3 vers v5, aucun RIR et le superset en cours conserve`() = runTest {
         creer(3) {
             execSQL("INSERT INTO entrainement VALUES (1, '2026-10-12', NULL, 1000, 2000, 0)")
             execSQL("INSERT INTO entrainement VALUES (2, '2026-10-14', NULL, 3000, NULL, 0)")
@@ -161,17 +160,57 @@ class MigrationTest {
         }
         val dao = ouvrir()
 
-        val serie = checkNotNull(dao.lireComplet(1)).exercices.single().series.single().serie
-        assertEquals(Serie(100, 10, 1, Instant.ofEpochMilli(1100), null, echec = false), serie)
+        val serie = checkNotNull(dao.lireComplet(1)).exercices.single().series.single()
+        assertEquals(Serie(100, 10, 1, Instant.ofEpochMilli(1100), null), serie.serie)
+        assertEquals(listOf(Palier(1, 100, 1, 45.0, 10, rir = null)), serie.paliers)
         val superset = checkNotNull(dao.observerEnCoursComplet().first()?.superset)
+        assertEquals(SupersetEnCours(2, "s1", "Élévations", "Curl", RoleSuperset.B, "8", "15", "12", ""), superset)
+        // Le RIR s'écrit ensuite normalement.
+        dao.modifierSerie(100, listOf(ValeursPalier(45.0, 10, 2)), Instant.ofEpochMilli(4000))
+        assertEquals(listOf(ValeursPalier(45.0, 10, 2)), checkNotNull(dao.lireComplet(1)).exercices.single().series.single().valeurs)
+        dao.memoriserSuperset(superset.copy(rirB = 3))
+        assertEquals(3, dao.observerEnCoursComplet().first()?.superset?.rirB)
+    }
+
+    @Test
+    fun `v4 vers v5, une serie a l'echec passe a RIR 0 sur chaque palier`() = runTest {
+        creer(4) {
+            execSQL("INSERT INTO entrainement VALUES (1, '2026-10-12', NULL, 1000, 2000, 0)")
+            execSQL("INSERT INTO entrainement VALUES (2, '2026-10-14', NULL, 3000, NULL, 0)")
+            execSQL("INSERT INTO exercice VALUES (10, 1, 'Tirage vertical', 1, NULL, NULL)")
+            execSQL("INSERT INTO serie VALUES (100, 10, 1, 1100, NULL, 0)")
+            execSQL("INSERT INTO serie VALUES (101, 10, 2, 1200, 1500, 1)")
+            // Série supprimée avant la mise à jour : son identifiant ne doit pas resservir.
+            execSQL("INSERT INTO serie VALUES (105, 10, 3, 1300, NULL, 0)")
+            execSQL("DELETE FROM serie WHERE id = 105")
+            execSQL("INSERT INTO palier VALUES (1, 100, 1, 40.0, 12)")
+            execSQL("INSERT INTO palier VALUES (2, 101, 1, 45.0, 10)")
+            execSQL("INSERT INTO palier VALUES (3, 101, 2, 30.0, 8)")
+            // Superset en cours : case cochée sur A, ses paliers gardés passent aussi à RIR 0.
+            execSQL("INSERT INTO palier_en_cours VALUES (1, 2, 1, 10.0, 12, 'A')")
+            execSQL("INSERT INTO palier_en_cours VALUES (2, 2, 1, 12.0, 10, 'B')")
+            execSQL("INSERT INTO superset_en_cours VALUES (2, 's1', 'Élévations', 'Curl', 'A', '8', '15', '', '', 1, 0)")
+            execSQL("INSERT INTO etat_chrono VALUES (2, 'EnCours', 900, 0)")
+        }
+        val dao = ouvrir()
+
+        val series = checkNotNull(dao.lireComplet(1)).exercices.single().series
+        assertEquals(listOf(Serie(100, 10, 1, Instant.ofEpochMilli(1100), null), Serie(101, 10, 2, Instant.ofEpochMilli(1200), Instant.ofEpochMilli(1500))), series.map { it.serie })
         assertEquals(
-            SupersetEnCours(2, "s1", "Élévations", "Curl", RoleSuperset.B, "8", "15", "12", "", echecA = false, echecB = false),
-            superset,
+            listOf(listOf(Palier(1, 100, 1, 40.0, 12, rir = null)), listOf(Palier(2, 101, 1, 45.0, 10, rir = 0), Palier(3, 101, 2, 30.0, 8, rir = 0))),
+            series.map { it.paliers },
         )
-        // Le marqueur s'écrit ensuite normalement.
-        dao.modifierSerie(100, listOf(ValeursPalier(45.0, 10)), Instant.ofEpochMilli(4000), echec = true)
-        assertTrue(checkNotNull(dao.lireComplet(1)).exercices.single().series.single().serie.echec)
-        dao.memoriserSuperset(superset.copy(echecB = true))
-        assertEquals(true, dao.observerEnCoursComplet().first()?.superset?.echecB)
+        val enCours = checkNotNull(dao.observerEnCoursComplet().first())
+        assertEquals(
+            listOf(PalierEnCours(1, 2, 1, 10.0, 12, RoleSuperset.A, rir = 0), PalierEnCours(2, 2, 1, 12.0, 10, RoleSuperset.B, rir = null)),
+            enCours.paliersEnCours,
+        )
+        assertEquals(SupersetEnCours(2, "s1", "Élévations", "Curl", RoleSuperset.A, "8", "15", "", "", rirA = 0, rirB = null), enCours.superset)
+
+        // Compteur d'identifiants conservé, et suppressions toujours en cascade jusqu'aux paliers.
+        assertEquals(106L, dao.ajouterSerie(10, listOf(ValeursPalier(40.0, 8, 1)), Instant.ofEpochMilli(4000)).serie.id)
+        dao.supprimerEntrainement(1)
+        val restants = checkNotNull(base).openHelper.readableDatabase.query("SELECT COUNT(*) FROM palier").use { it.moveToFirst(); it.getInt(0) }
+        assertEquals(0, restants)
     }
 }
