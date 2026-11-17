@@ -1,0 +1,1 @@
+RIR (reps in reserve) replaces the “to failure” checkbox: a row of 0 to 5+ buttons under reps, optional, with one RIR per drop set step. It shows in the exercise history and the workout details, can be changed when editing a set, and is included in plain text and CSV exports. Sets flagged “to failure” become RIR 0, and exports from earlier versions can still be imported.
