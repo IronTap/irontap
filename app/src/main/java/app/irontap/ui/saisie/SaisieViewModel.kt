@@ -28,6 +28,7 @@ import app.irontap.donnees.Horloge
 import app.irontap.donnees.EntrainementEnCours
 import app.irontap.donnees.PalierEnCours
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.donnees.SaisieOnglet
 import app.irontap.donnees.SupersetEnCours
 import app.irontap.donnees.TourEnregistre
@@ -38,6 +39,7 @@ import app.irontap.logique.Suggestion
 import app.irontap.logique.ajouterPoids
 import app.irontap.logique.ajouterRepetitions
 import app.irontap.logique.decrireSerie
+import app.irontap.logique.rirApresAppui
 import app.irontap.logique.historiqueExercice
 import app.irontap.logique.lirePoids
 import app.irontap.logique.lireRepetitions
@@ -245,7 +247,7 @@ class BrouillonSaisie {
     }
 
     /** Texte des champs et RIR des deux onglets, et onglet actif, à remettre si l'enregistrement est annulé. */
-    data class Copie(val a: List<String>, val b: List<String>, val actif: RoleSuperset, val rirA: Int? = null, val rirB: Int? = null)
+    data class Copie(val a: List<String>, val b: List<String>, val actif: RoleSuperset, val rirA: Rir? = null, val rirB: Rir? = null)
 
     fun copie() = Copie(principal.textes(), ongletB.textes(), actif, principal.rir, ongletB.rir)
 
@@ -271,8 +273,10 @@ class BrouillonSaisie {
         repetitionsA = principal.repetitions.text.toString(),
         poidsB = ongletB.poids.text.toString(),
         repetitionsB = ongletB.repetitions.text.toString(),
-        rirA = principal.rir,
-        rirB = ongletB.rir,
+        rirABas = principal.rir?.bas,
+        rirAHaut = principal.rir?.hautEnBase,
+        rirBBas = ongletB.rir?.bas,
+        rirBHaut = ongletB.rir?.hautEnBase,
     )
 }
 
@@ -403,11 +407,14 @@ class SaisieViewModel(
     override fun ajouterAuxRepetitions(valeur: Int) =
         actifs.repetitions.let { it.setTextAndPlaceCursorAtEnd(ajouterRepetitions(it.text.toString(), valeur)) }
 
-    /** Pastilles du RIR du palier en cours (onglet actif d'un superset, mémorisé avec lui) ; `null` l'efface. */
-    override fun choisirRir(rir: Int?) {
+    /**
+     * Pastille [valeur] du RIR du palier en cours (onglet actif d'un superset, mémorisé avec lui) : choix, plage de deux
+     * voisines ou effacement ([rirApresAppui]).
+     */
+    override fun appuyerRir(valeur: Int) {
         // Pendant un enregistrement, qui efface le RIR : l'appui serait perdu ou s'appliquerait au palier suivant.
         if (enregistrement?.isActive == true) return
-        actifs.rir = rir
+        actifs.rir = rirApresAppui(actifs.rir, valeur)
         (etat.value as? EtatSaisie.EnCours)?.superset?.let(::memoriser)
     }
 

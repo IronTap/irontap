@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.PalierEnCours
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.donnees.SupersetEnCours
 import app.irontap.donnees.ValeursPalier
 import app.irontap.logique.decrireSerie
@@ -18,10 +19,10 @@ class ChampsOnglet {
     val repetitions = TextFieldState()
 
     /**
-     * RIR choisi par les pastilles (DECISIONS.md), facultatif : il vaut pour le palier en cours, et s'efface avec les
-     * autres champs quand la série ou le palier est enregistré.
+     * RIR choisi par les pastilles (DECISIONS.md), facultatif, valeur seule ou plage : il vaut pour le palier en cours, et
+     * s'efface avec les autres champs quand la série ou le palier est enregistré.
      */
-    var rir by mutableStateOf<Int?>(null)
+    var rir by mutableStateOf<Rir?>(null)
 
     /**
      * Ni poids, ni répétitions : onglet ignoré par « Nouvel exercice » s'il n'a pas non plus de palier gardé. Un RIR

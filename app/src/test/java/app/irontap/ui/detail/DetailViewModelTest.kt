@@ -12,6 +12,7 @@ import app.irontap.donnees.Horloge
 import app.irontap.donnees.ValeursPalier
 import app.irontap.donnees.SaisieOnglet
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.ui.ViewModelsDeTest
 import java.time.Instant
 import java.time.LocalDate
@@ -474,18 +475,23 @@ class DetailViewModelTest {
         val tirage = vm.pret().complet.exercices[0]
         vm.ouvrirEdition(tirage.exercice, tirage.series[2])
         assertEquals("", vm.paliers.single().rir.text.toString())
-        vm.choisirRir(5)
+        vm.appuyerRir(5)
         assertEquals("5", vm.paliers.single().rir.text.toString())
+        // Plage : la pastille voisine s'ajoute.
+        vm.appuyerRir(4)
+        assertEquals("4-5", vm.paliers.single().rir.text.toString())
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
-        assertEquals(listOf(listOf(null), listOf(null), listOf(5)), rirs()[0])
+        assertEquals(listOf(listOf(null), listOf(null), listOf(Rir(4, 5))), rirs()[0])
 
         // Rouverte : le RIR est pré-rempli ; effacé, la série n'en a plus.
-        val notee = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.get(0)?.rir == 5 } as EtatDetail.Pret)
+        val notee = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(0)?.series?.get(2)?.paliers?.get(0)?.rir == Rir(4, 5) } as EtatDetail.Pret)
             .complet.exercices[0].series[2]
         vm.ouvrirEdition(tirage.exercice, notee)
+        assertEquals("4-5", vm.paliers.single().rir.text.toString())
+        vm.appuyerRir(4)
         assertEquals("5", vm.paliers.single().rir.text.toString())
-        vm.choisirRir(null)
+        vm.appuyerRir(5)
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
         assertEquals(listOf(listOf(null), listOf(null), listOf(null)), rirs()[0])
@@ -497,9 +503,20 @@ class DetailViewModelTest {
         vm.paliers[1].remplir("30", "8", "12")
         vm.ajouterPalier()
         vm.paliers[2].remplir("", "", "1")
+        vm.ajouterPalier()
+        vm.paliers[3].remplir("20", "6", "1-3")
+        // « 1-3 » ne se lit pas : rien n'est enregistré tant qu'il n'est pas corrigé.
+        vm.enregistrerEdition()
+        assertEquals(setOf(vm.paliers[3].cle), vm.panneaux.value.rirsEnErreur.keys)
+        assertEquals(emptySet<Long>(), vm.panneaux.value.paliersEnErreur.keys)
+        assertTrue(vm.panneaux.value.edition != null)
+        vm.paliers[3].rir.setTextAndPlaceCursorAtEnd("3 2")
+        // L'erreur disparaît dès que le RIR est modifié.
+        Snapshot.sendApplyNotifications()
+        assertTrue(vm.panneaux.value.rirsEnErreur.isEmpty())
         vm.enregistrerEdition()
         vm.panneaux.attendre { it.edition == null }
-        assertEquals(listOf(listOf(null), listOf(null), listOf(null), listOf(2, 5)), rirs()[0])
+        assertEquals(listOf(listOf(null), listOf(null), listOf(null), listOf(Rir(2), Rir(5), Rir(2, 3))), rirs()[0])
     }
 
     @Test
@@ -512,19 +529,24 @@ class DetailViewModelTest {
         vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("1")
         vm.enregistrerTour()
         vm.panneaux.attendre { it.tour == null }
-        assertEquals(listOf(listOf(listOf(null), listOf(null)), listOf(listOf(1), listOf(null, null))), rirs())
+        assertEquals(listOf(listOf(listOf(null), listOf(null)), listOf(listOf(Rir(1)), listOf(null, null))), rirs())
 
         // Rouverte : pré-rempli. Le RIR saisi va au palier principal, les paliers dégressifs gardent le leur.
-        val note = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.get(0)?.paliers?.get(0)?.rir == 1 } as EtatDetail.Pret)
+        val note = (vm.etat.attendre { (it as? EtatDetail.Pret)?.complet?.exercices?.get(1)?.series?.get(0)?.paliers?.get(0)?.rir == Rir(1) } as EtatDetail.Pret)
         val blocNote = blocsDetail(note.complet.exercices).filterIsInstance<BlocDetail.Superset>().single()
         vm.ouvrirModificationTour(blocNote, blocNote.tours[0])
         assertEquals("1", vm.champsTour.getValue(RoleSuperset.B).rir.text.toString())
         vm.ouvrirModificationTour(blocNote, blocNote.tours[1])
         vm.champsTour.getValue(RoleSuperset.A).rir.setTextAndPlaceCursorAtEnd("0")
-        vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("7")
+        vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("2-4")
+        // « 2-4 » ne se lit pas : signalé, rien n'est écrit.
+        vm.enregistrerTour()
+        assertEquals(setOf(vm.champsTour.getValue(RoleSuperset.B).cle), vm.panneaux.value.rirsEnErreur.keys)
+        assertTrue(vm.panneaux.value.tour != null)
+        vm.champsTour.getValue(RoleSuperset.B).rir.setTextAndPlaceCursorAtEnd("4-7")
         vm.enregistrerTour()
         vm.panneaux.attendre { it.tour == null }
-        assertEquals(listOf(listOf(listOf(null), listOf(0)), listOf(listOf(1), listOf(5, null))), rirs())
+        assertEquals(listOf(listOf(listOf(null), listOf(Rir(0))), listOf(listOf(Rir(1)), listOf(Rir(4, 5), null))), rirs())
 
         // Nouveau tour, B seulement avec un RIR : bloc vide, ignoré.
         vm.ouvrirAjoutTour(blocNote)
@@ -534,6 +556,6 @@ class DetailViewModelTest {
         assertTrue(vm.tourEnregistrable())
         vm.enregistrerTour()
         vm.panneaux.attendre { it.tour == null }
-        assertEquals(listOf(listOf(listOf(null), listOf(0), listOf(2)), listOf(listOf(1), listOf(5, null))), rirs())
+        assertEquals(listOf(listOf(listOf(null), listOf(Rir(0)), listOf(Rir(2))), listOf(listOf(Rir(1)), listOf(Rir(4, 5), null))), rirs())
     }
 }

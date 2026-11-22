@@ -4,8 +4,8 @@ import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertHeightIsEqualTo
-import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -23,6 +23,7 @@ import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.SerieAvecPaliers
 import app.irontap.donnees.ValeursPalier
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.donnees.serieDeTest
 import app.irontap.logique.Suggestion
 import app.irontap.ui.verifierAjoutsPoids
@@ -94,7 +95,7 @@ class DetailCaptureTest {
     private object SansEdition : ActionsEdition {
         override fun ajouterAuPoids(valeur: Int) = Unit
         override fun ajouterAuxRepetitions(valeur: Int) = Unit
-        override fun choisirRir(rir: Int?) = Unit
+        override fun appuyerRir(valeur: Int) = Unit
         override fun ajouterPalier() = 0L
         override fun retirerPalier(cle: Long) = Unit
         override fun enregistrer() = Unit
@@ -283,12 +284,12 @@ class DetailCaptureTest {
     // --- RIR (DECISIONS.md) ---
 
     /** [complet] où les paliers des séries de [rirs] (identifiant → RIR de chaque palier, le principal d'abord) ont ces RIR. */
-    private fun noter(complet: EntrainementComplet, rirs: Map<Long, List<Int?>>) = complet.copy(
+    private fun noter(complet: EntrainementComplet, rirs: Map<Long, List<Rir?>>) = complet.copy(
         exercices = complet.exercices.map { e ->
             e.copy(
                 series = e.series.map { serie ->
                     val valeurs = rirs[serie.serie.id] ?: return@map serie
-                    serie.copy(paliers = serie.paliers.mapIndexed { index, palier -> palier.copy(rir = valeurs.getOrNull(index)) })
+                    serie.copy(paliers = serie.paliers.mapIndexed { index, palier -> palier.copy(rirBas = valeurs.getOrNull(index)?.bas, rirHaut = valeurs.getOrNull(index)?.hautEnBase) })
                 },
             )
         },
@@ -297,23 +298,23 @@ class DetailCaptureTest {
     /** Badge « RIR » après chaque palier qui en a un, dégressive comprise. */
     @Test
     fun rir() {
-        val note = noter(complet, mapOf(tirage.series[1].serie.id to listOf(2), tirage.series[2].serie.id to listOf(1, 0, 5)))
+        val note = noter(complet, mapOf(tirage.series[1].serie.id to listOf(Rir(2, 3)), tirage.series[2].serie.id to listOf(Rir(1), Rir(0), Rir(5))))
         compose.setContent {
             IronTapTheme { ContenuDetail(note, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
         }
-        listOf("RIR 2", "RIR 1", "RIR 0", "RIR 5+").forEach { compose.onAllNodes(hasText(it), useUnmergedTree = true).assertCountEquals(1) }
+        listOf("RIR 2-3", "RIR 1", "RIR 0", "RIR 5+").forEach { compose.onAllNodes(hasText(it), useUnmergedTree = true).assertCountEquals(1) }
         compose.onRoot().captureRoboImage()
     }
 
     /** Cases étroites d'un tour : la valeur passe à la ligne plutôt que de chasser le badge. */
     @Test
     fun rirSuperset() {
-        val note = noter(epaules, mapOf(epaules.exercices[1].series[2].serie.id to listOf(3), epaules.exercices[2].series[1].serie.id to listOf(5, 0)))
+        val note = noter(epaules, mapOf(epaules.exercices[1].series[2].serie.id to listOf(Rir(2, 3)), epaules.exercices[2].series[1].serie.id to listOf(Rir(4, 5), Rir(0))))
         compose.setContent {
             IronTapTheme { ContenuDetail(note, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction()) }
         }
-        compose.onAllNodes(hasText("RIR 3"), useUnmergedTree = true).assertCountEquals(1)
-        compose.onAllNodes(hasText("RIR 5+"), useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodes(hasText("RIR 2-3"), useUnmergedTree = true).assertCountEquals(1)
+        compose.onAllNodes(hasText("RIR 4-5+"), useUnmergedTree = true).assertCountEquals(1)
         compose.onRoot().captureRoboImage()
     }
 
@@ -330,8 +331,26 @@ class DetailCaptureTest {
             )
         }
         compose.waitForIdle()
-        compose.onNode(hasContentDescription("RIR 2")).assertIsSelected().assertHeightIsEqualTo(48.dp)
-        compose.onNode(hasContentDescription("RIR 0")).assertIsNotSelected()
+        compose.onNode(hasContentDescription("RIR 2")).assertIsOn().assertHeightIsEqualTo(48.dp)
+        compose.onNode(hasContentDescription("RIR 0")).assertIsOff()
+        captureScreenRoboImage()
+    }
+
+    /** Écran 7 : plage de RIR de la série, deux pastilles d'une seule forme. */
+    @Test
+    fun editionSerieRirPlage() {
+        afficher {
+            FeuilleEdition(
+                edition = EditionSerie(tirage.exercice, tirage.series[1]),
+                paliers = listOf(ChampsPalier(0, "45", "12", "1-2")),
+                paliersEnErreur = emptySet(),
+                erreurEnregistrement = false,
+                actions = SansEdition,
+            )
+        }
+        compose.waitForIdle()
+        listOf("RIR 1", "RIR 2").forEach { compose.onNode(hasContentDescription(it)).assertIsOn() }
+        compose.onNode(hasContentDescription("RIR 3")).assertIsOff()
         captureScreenRoboImage()
     }
 
@@ -356,6 +375,25 @@ class DetailCaptureTest {
         captureScreenRoboImage()
     }
 
+    /** 7·D : plages « 2-3 » et « 4-5+ » tapées, et « 1-3 » refusé avec son message. */
+    @Test
+    fun editionDegressiveRirPlage() {
+        afficher {
+            FeuilleEdition(
+                edition = EditionSerie(tirage.exercice, tirage.series[2], tableau = true),
+                paliers = listOf(ChampsPalier(0, "45", "10", "2-3"), ChampsPalier(1, "30", "8", "1-3"), ChampsPalier(2, "20", "6", "4-5")),
+                paliersEnErreur = emptySet(),
+                rirsEnErreur = setOf(1),
+                erreurEnregistrement = false,
+                actions = SansEdition,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNode(hasText("RIR : un nombre, ou deux qui se suivent (2-3)")).assertIsDisplayed()
+        compose.onAllNodes(hasContentDescription("Retirer ce palier")).assertCountEquals(2)
+        captureScreenRoboImage()
+    }
+
     /** Feuille d'un tour : RIR à droite des répétitions de A et de B, « RIR » tant qu'il est vide. */
     @Test
     fun tourRir() {
@@ -366,7 +404,7 @@ class DetailCaptureTest {
                 ContenuDetail(epaules, null, SansNavigation, onExporter = {}, onSupprimerEntrainement = {}, SansAction())
                 FeuilleTour(
                     edition = EditionTour(a, b, tour = 2, existant = true, series = emptyMap()),
-                    champs = mapOf(RoleSuperset.A to ChampsPalier(-1, "8", "12", "1"), RoleSuperset.B to ChampsPalier(-2, "12", "10")),
+                    champs = mapOf(RoleSuperset.A to ChampsPalier(-1, "8", "12", "1-2"), RoleSuperset.B to ChampsPalier(-2, "12", "10")),
                     paliersEnErreur = emptySet(),
                     erreurEnregistrement = false,
                     enregistrable = true,

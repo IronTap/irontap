@@ -1,5 +1,6 @@
 package app.irontap.logique
 
+import app.irontap.donnees.Rir
 import app.irontap.donnees.SerieHistorique
 
 /** Popup « Historique de l'exercice » (maquette 3g, spec §4.3.8) : [nom] tel qu'enregistré, puis les séances. */
@@ -16,7 +17,7 @@ data class SeanceHistorique(val entete: String, val series: List<LigneHistorique
  * avec une flèche ↓ (spec §4.3.8, v1.4). [rirs] : RIR de chaque palier, le principal d'abord (`null` : pas noté ;
  * liste vide : aucun), affiché après sa valeur.
  */
-data class LigneHistorique(val principal: String, val degressifs: List<String> = emptyList(), val rirs: List<Int?> = emptyList())
+data class LigneHistorique(val principal: String, val degressifs: List<String> = emptyList(), val rirs: List<Rir?> = emptyList())
 
 /**
  * Regroupe les paliers [series] par séance puis par série, dans l'ordre reçu (de la séance la plus récente à

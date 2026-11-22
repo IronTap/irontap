@@ -13,6 +13,7 @@ import app.irontap.donnees.Horloge
 import app.irontap.donnees.ValeursPalier
 import app.irontap.donnees.SaisieOnglet
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.logique.HistoriqueExercice
 import app.irontap.logique.LigneHistorique
 import app.irontap.logique.SeanceHistorique
@@ -960,32 +961,35 @@ class SaisieViewModelTest {
         assertEquals("Série 1 enregistrée · 45 kg × 10", dernierToast())
 
         vm.saisir(poids = "45", repetitions = "10")
-        vm.choisirRir(3)
-        vm.choisirRir(null)
+        vm.appuyerRir(3)
+        vm.appuyerRir(3)
         assertNull(vm.rir())
-        vm.choisirRir(2)
-        assertEquals(2, vm.rir())
+        vm.appuyerRir(2)
+        assertEquals(Rir(2), vm.rir())
         vm.degressive()
         vm.paliersGardes(1)
         vm.ecrituresTerminees()
         // Chaque palier a son RIR : celui du palier suivant reste à choisir.
         assertNull(vm.rir())
         vm.saisir(poids = "30", repetitions = "8")
-        vm.choisirRir(0)
+        // Plage : deux pastilles voisines.
+        vm.appuyerRir(0)
+        vm.appuyerRir(1)
+        assertEquals(Rir(0, 1), vm.rir())
         vm.enregistrer(Suite.NouvelleSerie)
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
         vm.ecrituresTerminees()
-        assertEquals("Série 2 enregistrée · 45 kg × 10 (RIR 2) ↓ 30 kg × 8 (RIR 0)", dernierToast())
+        assertEquals("Série 2 enregistrée · 45 kg × 10 (RIR 2) ↓ 30 kg × 8 (RIR 0-1)", dernierToast())
         assertNull(vm.rir())
-        assertEquals(listOf(listOf(listOf(null), listOf(2, 0))), rirs(id))
+        assertEquals(listOf(listOf(listOf(null), listOf(Rir(2), Rir(0, 1)))), rirs(id))
 
         // Annuler remet le RIR du palier courant ; le palier gardé retrouve le sien.
         vm.annulerSerie()
         vm.paliersGardes(1)
         vm.ecrituresTerminees()
-        assertEquals(0, vm.rir())
+        assertEquals(Rir(0, 1), vm.rir())
         assertEquals(listOf(listOf(listOf(null))), rirs(id))
-        assertEquals(listOf(ValeursPalier(45.0, 10, 2)), dao.lireEnCoursComplet()?.paliersEnCours?.map { it.valeurs })
+        assertEquals(listOf(ValeursPalier(45.0, 10, Rir(2))), dao.lireEnCoursComplet()?.paliersEnCours?.map { it.valeurs })
     }
 
     @Test
@@ -994,7 +998,7 @@ class SaisieViewModelTest {
         val vm = ecran()
         vm.enCours()
         vm.saisir(nom = "Squat", poids = "100", repetitions = "5")
-        vm.choisirRir(1)
+        vm.appuyerRir(1)
         vm.enregistrer(Suite.NouvelExercice)
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.entrainement?.nouvelExercice == true }
         vm.ecrituresTerminees()
@@ -1005,7 +1009,7 @@ class SaisieViewModelTest {
         vm.etat.attendre { (it as? EtatSaisie.EnCours)?.nomVerrouille == "Fentes" }
         vm.ecrituresTerminees()
         // Champs vides et RIR choisi : rien à enregistrer, le RIR s'efface avec le passage.
-        vm.choisirRir(4)
+        vm.appuyerRir(4)
         vm.enregistrer(Suite.NouvelExercice)
         assertTrue(vm.formulaire.value.passage is PassageExercice.Simple)
         vm.confirmerPassage()
@@ -1014,13 +1018,13 @@ class SaisieViewModelTest {
         assertNull(vm.rir())
 
         vm.saisir(nom = "Mollets", repetitions = "20")
-        vm.choisirRir(5)
+        vm.appuyerRir(5)
         vm.demanderFin()
         val dialogue = vm.formulaire.attendre { it.dialogue != null }.dialogue as DialogueFin.AvecSerie
         assertEquals("PDC × 20 (RIR 5+)", dialogue.serie.description)
         vm.terminer(avecSerie = true)
         vm.etat.attendre { it == EtatSaisie.Aucun }
-        assertEquals(listOf(listOf(listOf(1)), listOf(listOf(null)), listOf(listOf(5))), rirs(id))
+        assertEquals(listOf(listOf(listOf(Rir(1))), listOf(listOf(null)), listOf(listOf(Rir(5)))), rirs(id))
     }
 
     @Test
@@ -1033,40 +1037,41 @@ class SaisieViewModelTest {
         vm.enSuperset()
         vm.basculer(RoleSuperset.B)
         vm.saisirOnglet(RoleSuperset.B, "Curl", "12", "11")
-        vm.choisirRir(1)
-        assertEquals(1, vm.rir(RoleSuperset.B))
+        vm.appuyerRir(1)
+        vm.appuyerRir(2)
+        assertEquals(Rir(1, 2), vm.rir(RoleSuperset.B))
         assertNull(vm.rir(RoleSuperset.A))
         // Mémorisé en base à chaque appui : l'appli peut être tuée.
-        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.rirB == 1 }
+        vm.etat.attendre { (it as? EtatSaisie.EnCours)?.superset?.rirB == Rir(1, 2) }
         vms.vider()
 
         val reprise = ecran(BrouillonSaisie(), attendreToast = toastsPermanents)
         reprise.enSuperset()
         assertEquals(RoleSuperset.B, reprise.ongletActif)
-        assertEquals(1, reprise.rir(RoleSuperset.B))
+        assertEquals(Rir(1, 2), reprise.rir(RoleSuperset.B))
         assertNull(reprise.rir(RoleSuperset.A))
 
         reprise.enregistrer(Suite.NouvelleSerie)
         reprise.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 2 }
         reprise.ecrituresTerminees()
-        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 11 (RIR 1)", dernierToast())
+        assertEquals("Série 1 enregistrée · A 8 kg × 15 · B 12 kg × 11 (RIR 1-2)", dernierToast())
         assertNull(reprise.rir(RoleSuperset.B))
         assertEquals(null, dao.lireEnCoursComplet()?.superset?.rirB)
 
         // Dégressive sur A : le palier gardé emporte son RIR, l'onglet repart sans.
         reprise.saisirOnglet(RoleSuperset.A, poids = "6", repetitions = "12")
-        reprise.choisirRir(2)
+        reprise.appuyerRir(2)
         reprise.degressive()
         reprise.paliersGardes(1)
         reprise.ecrituresTerminees()
         assertNull(reprise.rir(RoleSuperset.A))
         reprise.saisirOnglet(RoleSuperset.A, poids = "4", repetitions = "10")
-        reprise.choisirRir(0)
+        reprise.appuyerRir(0)
         reprise.saisirOnglet(RoleSuperset.B, poids = "10", repetitions = "10")
         reprise.enregistrer(Suite.NouvelleSerie)
         reprise.etat.attendre { (it as? EtatSaisie.EnCours)?.numeroSerie == 3 }
         reprise.ecrituresTerminees()
         assertEquals("Série 2 enregistrée · A 6 kg × 12 (RIR 2) ↓ 4 kg × 10 (RIR 0) · B 10 kg × 10", dernierToast())
-        assertEquals(listOf(listOf(listOf(null), listOf(2, 0)), listOf(listOf(1), listOf(null))), rirs(id))
+        assertEquals(listOf(listOf(listOf(null), listOf(Rir(2), Rir(0))), listOf(listOf(Rir(1, 2)), listOf(null))), rirs(id))
     }
 }

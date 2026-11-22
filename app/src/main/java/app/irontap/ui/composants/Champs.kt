@@ -196,8 +196,9 @@ enum class TypeChampPalier { Poids, Repetitions, Rir }
  * répétitions 60, RIR 48 ; un poids comme « 102,25 » élargit le champ plutôt que d'être coupé), surface, rayon 8, filet
  * séparateur ; actif : bordure accent 2 dp ; erreur : 2 dp couleur erreur. Valeur 24 / 500 calée à droite, suivie
  * de « kg » 15 / 400 neutre-400 pour le poids. Clavier numérique ; [onSuivant] reçoit l'action « Suivant »
- * ([imeAction]) du clavier. RIR ([TypeChampPalier.Rir], facultatif) : un entier de 3 chiffres au plus, « 5 » affiché
- * « 5+ » ; vide, l'[indication] est en style d'unité (« RIR »).
+ * ([imeAction]) du clavier. RIR ([TypeChampPalier.Rir], facultatif) : un nombre de 3 chiffres au plus, ou deux séparés
+ * par un tiret, une espace, une virgule, un point ou une barre oblique (« 2-3 », lu par `lireRir`) ; un « 5 » en dernier
+ * s'affiche « 5+ » ; vide, l'[indication] est en style d'unité (« RIR »).
  */
 @Composable
 fun ChampPalier(
@@ -240,7 +241,11 @@ fun ChampPalier(
     BasicTextField(
         state = etat,
         modifier = modifier.semantics { contentDescription = description },
-        inputTransformation = if (poids) FiltrePoids else FiltreRepetitions,
+        inputTransformation = when (type) {
+            TypeChampPalier.Poids -> FiltrePoids
+            TypeChampPalier.Repetitions -> FiltreRepetitions
+            TypeChampPalier.Rir -> FiltreRir
+        },
         outputTransformation = if (rir) AffichageRir else null,
         textStyle = apparence.valeur.copy(color = Couleurs.Texte, textAlign = TextAlign.End),
         keyboardOptions = KeyboardOptions(keyboardType = if (poids) KeyboardType.Decimal else KeyboardType.Number, imeAction = imeAction),
@@ -337,11 +342,25 @@ private object FiltreRepetitions : InputTransformation {
     }
 }
 
-/** RIR tel qu'affiché : « 5 » se lit « 5+ » ; une autre valeur, même au-delà, s'affiche telle que tapée jusqu'à l'enregistrement. */
-private fun texteRirAffiche(texte: String) = if (texte == "$RIR_MAX") "$RIR_MAX+" else texte
+/** Un nombre de 3 chiffres au plus, éventuellement suivi d'un séparateur (espaces autour permises) et d'un second. */
+private object FiltreRir : InputTransformation {
+    private val Format = Regex("""\d{0,3}(?: ?[-–/,.]? ?\d{0,3})?""")
+    override fun TextFieldBuffer.transformInput() {
+        if (!Format.matches(asCharSequence())) revertAllChanges()
+    }
+}
+
+/** Un « 5 » en dernière valeur tapée (« 5 », « 4-5 ») : il se lit « 5+ ». */
+private val FinRirMax = Regex("""(^|\D)$RIR_MAX$""")
+
+/**
+ * RIR tel qu'affiché : un « 5 » en dernier se lit « 5+ » (« 4-5+ ») ; une autre valeur, même au-delà, s'affiche telle que
+ * tapée jusqu'à l'enregistrement.
+ */
+private fun texteRirAffiche(texte: String) = if (FinRirMax.containsMatchIn(texte)) "$texte+" else texte
 
 private object AffichageRir : OutputTransformation {
     override fun TextFieldBuffer.transformOutput() {
-        if (asCharSequence().toString() == "$RIR_MAX") append("+")
+        if (FinRirMax.containsMatchIn(asCharSequence())) append("+")
     }
 }

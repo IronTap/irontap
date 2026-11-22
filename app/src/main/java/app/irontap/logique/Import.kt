@@ -2,6 +2,7 @@ package app.irontap.logique
 
 import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.donnees.ValeursPalier
 import java.time.LocalDate
 import java.time.format.DateTimeParseException
@@ -54,7 +55,8 @@ private val Obligatoires = EnteteCsv.take(8)
  *   répétitions de 1 à 999. Exercices, séries et paliers renumérotés 1, 2… dans leur ordre, sauf les tours d'un
  *   superset, gardés tels quels (les tours vides sont retirés). Un exercice seul de son superset devient ordinaire,
  *   comme dans l'appli ; sans colonnes de superset (anciens exports), A et B reviennent en deux exercices ordinaires.
- * - RIR : colonne `rir`, entier positif ou nul (au-delà de 5 : 5, « 5+ ») ou vide. Exports de la version 0.3.0 : colonne
+ * - RIR : colonne `rir`, entier positif ou nul (au-delà de 5 : 5, « 5+ »), plage de deux valeurs voisines (« 2 à 3 »,
+ *   « 2-3 », cf. [lireRir]) ou vide. Exports de la version 0.3.0 : colonne
  *   `echec`, 1 ou vide (0 accepté) ; une série à l'échec (l'une de ses lignes l'est) a un RIR 0 sur chaque palier
  *   qui n'en a pas d'autre, comme à la migration de la base. Sans ces colonnes (anciens exports), aucun RIR.
  * Toute erreur refuse le fichier entier, avec chaque ligne fautive.
@@ -239,7 +241,7 @@ private fun lireLigne(enregistrement: Enregistrement, colonnes: Map<String, Int>
     if (superset.isEmpty() && roleTexte.isNotEmpty()) erreur("rôle de superset sans numéro de superset")
     if (superset.isNotEmpty() && roleTexte.isEmpty()) erreur("superset sans rôle (A ou B)")
     val rir = champ("rir").takeIf { it.isNotEmpty() }?.let { texte ->
-        texte.toIntOrNull()?.takeIf { it >= 0 }?.coerceAtMost(RIR_MAX).also { if (it == null) erreur("RIR « $texte » invalide (nombre entier ou vide)") }
+        lireRir(texte).also { if (it == null) erreur("RIR « $texte » invalide (nombre entier, deux valeurs voisines comme 2 à 3, ou vide)") }
     }
     val echec = when (val texte = champ("echec")) {
         "", "0" -> false
@@ -307,7 +309,7 @@ private fun construire(lignes: List<LigneLue>, erreurs: MutableList<ErreurImport
             }
             val echec = lignesSerie.any { it.echec }
             val paliers = lignesSerie.sortedBy { it.palier }.distinctBy { it.palier }.map { it.valeurs }
-            SerieImportee(ordre, if (echec) paliers.map { it.copy(rir = it.rir ?: 0) } else paliers)
+            SerieImportee(ordre, if (echec) paliers.map { it.copy(rir = it.rir ?: Rir(0)) } else paliers)
         }
         reference to series
     }

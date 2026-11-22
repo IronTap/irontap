@@ -3,6 +3,7 @@ package app.irontap.logique
 import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -74,8 +75,8 @@ private fun texteSuperset(membres: List<ExerciceAvecSeries>): String {
 /**
  * Colonnes du CSV : celles de la spec §5, puis `entrainement` (numéro de l'entraînement dans le fichier : deux séances
  * du même jour au même libellé restent distinctes), `superset` (numéro du superset dans l'entraînement) et
- * `role_superset` (A ou B), vides hors superset, et `rir` (RIR du palier, de 0 à 5, vide s'il n'est pas noté)
- * (DECISIONS.md).
+ * `role_superset` (A ou B), vides hors superset, et `rir` (RIR du palier, de 0 à 5, ou plage « 2 à 3 » ([rirCsv]), vide
+ * s'il n'est pas noté) (DECISIONS.md).
  */
 internal val EnteteCsv = listOf(
     "date", "libelle_entrainement", "exercice", "ordre_exercice", "ordre_serie", "palier", "poids_kg", "repetitions",
@@ -108,7 +109,7 @@ fun exporterCsv(entrainements: List<EntrainementComplet>): String = buildString 
                         (index + 1).toString(),
                         superset?.toString().orEmpty(),
                         exercice.exercice.supersetRole?.takeIf { superset != null }?.name.orEmpty(),
-                        palier.rir?.toString().orEmpty(),
+                        palier.rir?.let(::rirCsv).orEmpty(),
                     )
                     append(champs.joinToString(";")).append("\r\n")
                 }
@@ -116,6 +117,12 @@ fun exporterCsv(entrainements: List<EntrainementComplet>): String = buildString 
         }
     }
 }
+
+/**
+ * RIR dans le CSV : « 2 », « 5 » (5+), ou une plage « 2 à 3 ». Pas « 2-3 », qu'Excel lit comme une date (2 mars) : réenregistré
+ * par Excel, le fichier ne se réimporterait plus.
+ */
+internal fun rirCsv(rir: Rir): String = if (rir.plage) "${rir.bas} à ${rir.haut}" else rir.bas.toString()
 
 /** Caractères qui font interpréter une cellule comme une formule par les tableurs. */
 internal val DebutsFormule = setOf('=', '+', '-', '@', '\t', '\r')

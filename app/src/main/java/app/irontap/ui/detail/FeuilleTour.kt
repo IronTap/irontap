@@ -56,6 +56,8 @@ fun FeuilleTour(
     onEnregistrer: () -> Unit,
     onSupprimer: (EditionTour) -> Unit,
     onFermer: () -> Unit,
+    /** Blocs dont le RIR tapé ne se lit pas (« 1-3 »). */
+    rirsEnErreur: Set<Long> = emptySet(),
 ) {
     var affichee by remember { mutableStateOf(edition) }
     if (edition != null) affichee = edition
@@ -125,6 +127,7 @@ fun FeuilleTour(
                         largeur = 64.dp,
                         description = "RIR de l’exercice $role",
                         modifier = Modifier.focusRequester(focus[index * 3 + 2]),
+                        erreur = champ.cle in rirsEnErreur,
                         imeAction = if (dernier) ImeAction.Done else ImeAction.Next,
                         onSuivant = KeyboardActionHandler { if (dernier) focusManager.clearFocus() else focus[index * 3 + 3].requestFocus() },
                         apparence = ApparenceChampPalier.Tour,
@@ -135,6 +138,9 @@ fun FeuilleTour(
         }
         if (paliersEnErreur.any { cle -> champs.values.any { it.cle == cle } }) {
             MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 8.dp))
+        }
+        if (rirsEnErreur.any { cle -> champs.values.any { it.cle == cle } }) {
+            MessageErreur(MessageRirIllisible, Modifier.padding(top = 8.dp))
         }
         val aide = if (contenu.existant) {
             "Laisse un bloc vide pour ne pas changer sa série."

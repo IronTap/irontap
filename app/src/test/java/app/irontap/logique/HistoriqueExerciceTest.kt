@@ -1,5 +1,6 @@
 package app.irontap.logique
 
+import app.irontap.donnees.Rir
 import app.irontap.donnees.SerieHistorique
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -22,8 +23,8 @@ class HistoriqueExerciceTest {
         reps: Int,
         nom: String = "Tirage vertical",
         serieId: Long = ++derniereSerie,
-        rir: Int? = null,
-    ) = SerieHistorique(entrainement, date, libelle, nom, serieId, poids, reps, rir = rir)
+        rir: Rir? = null,
+    ) = SerieHistorique(entrainement, date, libelle, nom, serieId, poids, reps, rirBas = rir?.bas, rirHaut = rir?.hautEnBase)
 
     private fun lignes(vararg principaux: String) = principaux.map { LigneHistorique(it) }
 
@@ -89,13 +90,13 @@ class HistoriqueExerciceTest {
         val series = historiqueExercice(
             listOf(
                 serie(1, douze, null, 45.0, 10),
-                serie(1, douze, null, 45.0, 10, rir = 2),
+                serie(1, douze, null, 45.0, 10, rir = Rir(2)),
                 serie(1, douze, null, 30.0, 8, serieId = derniereSerie),
-                serie(1, douze, null, 20.0, 6, serieId = derniereSerie, rir = 0),
+                serie(1, douze, null, 20.0, 6, serieId = derniereSerie, rir = Rir(0, 1)),
             ),
         )?.seances?.single()?.series
         assertEquals(
-            listOf(LigneHistorique("10 × 45 kg"), LigneHistorique("10 × 45 kg", listOf("8 × 30 kg", "6 × 20 kg"), rirs = listOf(2, null, 0))),
+            listOf(LigneHistorique("10 × 45 kg"), LigneHistorique("10 × 45 kg", listOf("8 × 30 kg", "6 × 20 kg"), rirs = listOf(Rir(2), null, Rir(0, 1)))),
             series,
         )
     }

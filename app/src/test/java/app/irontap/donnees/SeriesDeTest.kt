@@ -15,10 +15,10 @@ fun serieDeTest(
     repetitions: Int,
     creeLe: Instant,
     vararg degressifs: Pair<Double?, Int>,
-    rirs: List<Int?> = emptyList(),
+    rirs: List<Rir?> = emptyList(),
 ) = SerieAvecPaliers(
     Serie(id, exerciceId, ordre, creeLe),
     (listOf(poidsKg to repetitions) + degressifs).mapIndexed { index, (poids, reps) ->
-        Palier(id * 100 + index, id, index + 1, poids, reps, rirs.getOrNull(index))
+        Palier(id * 100 + index, id, index + 1, poids, reps, rirs.getOrNull(index)?.bas, rirs.getOrNull(index)?.hautEnBase)
     },
 )

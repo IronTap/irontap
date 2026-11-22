@@ -167,6 +167,7 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             if (bloc != null && tour != null) vm.demanderSuppressionTour(bloc, tour)
         },
         onFermer = vm::fermerTour,
+        rirsEnErreur = panneaux.rirsEnErreur.keys,
     )
     panneaux.suppressionTour?.let { suppression ->
         DialogueSuppressionTour(
@@ -180,6 +181,7 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
         edition = panneaux.edition,
         paliers = vm.paliers,
         paliersEnErreur = panneaux.paliersEnErreur.keys,
+        rirsEnErreur = panneaux.rirsEnErreur.keys,
         erreurEnregistrement = panneaux.erreurEnregistrement,
         actions = object : ActionsEdition {
             override fun ajouterAuPoids(valeur: Int) {
@@ -188,7 +190,7 @@ fun EcranDetail(vm: DetailViewModel, navigation: NavigationDetail) {
             override fun ajouterAuxRepetitions(valeur: Int) {
                 vm.ajouterAuxRepetitions(valeur)
             }
-            override fun choisirRir(rir: Int?) = vm.choisirRir(rir)
+            override fun appuyerRir(valeur: Int) = vm.appuyerRir(valeur)
             override fun ajouterPalier() = vm.ajouterPalier()
             override fun retirerPalier(cle: Long) = vm.retirerPalier(cle)
             override fun enregistrer() = vm.enregistrerEdition()

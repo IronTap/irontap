@@ -14,6 +14,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.irontap.R
+import app.irontap.donnees.Rir
 import app.irontap.ui.theme.Couleurs
 import app.irontap.ui.theme.Typo
 
@@ -31,7 +32,7 @@ fun PaliersEmpiles(
     stylePrincipal: TextStyle,
     modifier: Modifier = Modifier,
     retrait: Dp = 0.dp,
-    rirs: List<Int?> = emptyList(),
+    rirs: List<Rir?> = emptyList(),
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         AvecRir(rirs.firstOrNull()) {
@@ -50,7 +51,7 @@ fun PaliersEmpiles(
 
 /** [valeur] suivie du badge de son [rir] s'il est noté, ou dessous si la largeur manque. */
 @Composable
-private fun AvecRir(rir: Int?, modifier: Modifier = Modifier, valeur: @Composable () -> Unit) {
+private fun AvecRir(rir: Rir?, modifier: Modifier = Modifier, valeur: @Composable () -> Unit) {
     if (rir == null) {
         Box(modifier) { valeur() }
     } else {

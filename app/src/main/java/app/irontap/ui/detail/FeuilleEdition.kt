@@ -63,8 +63,8 @@ interface ActionsEdition {
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
 
-    /** Pastilles du RIR de l'écran 7 : la valeur choisie, ou `null` pour l'effacer. */
-    fun choisirRir(rir: Int?)
+    /** Pastille [valeur] du RIR de l'écran 7 : choix, plage de deux voisines ou effacement. */
+    fun appuyerRir(valeur: Int)
 
     /** « + Ajouter un palier » : retourne la clé de la nouvelle ligne, qui prend le focus. */
     fun ajouterPalier(): Long
@@ -82,7 +82,8 @@ private val AjoutsRepetitions = listOf(1, 2, 5, 10)
  * boutons +X, pastilles du RIR), tableau des paliers 7·D pour une dégressive (spec §4.5.1), avec un RIR au bout de chaque
  * ligne. Affichée tant que [edition]
  * n'est pas `null` ; quand elle le redevient (enregistrement, suppression), la feuille se referme avec son
- * animation. [paliersEnErreur] : clés des paliers dont les répétitions manquent.
+ * animation. [paliersEnErreur] : clés des paliers dont les répétitions manquent ; [rirsEnErreur] : ceux dont le RIR tapé
+ * ne se lit pas.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,6 +93,7 @@ fun FeuilleEdition(
     paliersEnErreur: Set<Long>,
     erreurEnregistrement: Boolean,
     actions: ActionsEdition,
+    rirsEnErreur: Set<Long> = emptySet(),
 ) {
     // Dernière édition affichée, gardée le temps de l'animation de fermeture.
     var affichee by remember { mutableStateOf(edition) }
@@ -131,6 +133,7 @@ fun FeuilleEdition(
             TableauPaliers(
                 paliers = paliers,
                 paliersEnErreur = paliersEnErreur,
+                rirsEnErreur = rirsEnErreur,
                 aFocaliser = aFocaliser,
                 onFocalise = { aFocaliser = null },
                 onAjouter = { aFocaliser = actions.ajouterPalier() },
@@ -143,6 +146,7 @@ fun FeuilleEdition(
                 modifier = Modifier.padding(top = 8.dp),
             )
             if (enErreur) MessageErreur("Indique le nombre de répétitions de chaque palier", Modifier.padding(top = 6.dp))
+            if (paliers.any { it.cle in rirsEnErreur }) MessageErreur(MessageRirIllisible, Modifier.padding(top = 6.dp))
         } else {
             val palier = paliers.firstOrNull() ?: return@FeuilleNocturne
             LibelleChamp("Poids", Modifier.padding(top = 18.dp))
@@ -153,7 +157,7 @@ fun FeuilleEdition(
             RangeeAjouts(AjoutsRepetitions, actions::ajouterAuxRepetitions, fond = Couleurs.Fond)
             if (enErreur) MessageErreur("Indique le nombre de répétitions", Modifier.padding(top = 6.dp))
             LibelleChamp(LIBELLE_RIR, Modifier.padding(top = 14.dp))
-            PastillesRir(lireRir(palier.rir.text.toString()), actions::choisirRir, fond = Couleurs.Fond)
+            PastillesRir(lireRir(palier.rir.text.toString()), actions::appuyerRir, fond = Couleurs.Fond)
             // Passage en dégressive : la feuille bascule vers le tableau (spec §4.5.1).
             BoutonTexte(
                 texte = "Ajouter un palier",
@@ -207,6 +211,7 @@ fun FeuilleEdition(
 private fun TableauPaliers(
     paliers: List<ChampsPalier>,
     paliersEnErreur: Set<Long>,
+    rirsEnErreur: Set<Long>,
     aFocaliser: Long?,
     onFocalise: () -> Unit,
     onAjouter: () -> Unit,
@@ -236,6 +241,7 @@ private fun TableauPaliers(
                     numero = index + 1,
                     palier = palier,
                     erreur = palier.cle in paliersEnErreur,
+                    erreurRir = palier.cle in rirsEnErreur,
                     focusPoids = poids,
                     focusRepetitions = repetitions,
                     focusRir = rir,
@@ -256,6 +262,7 @@ private fun LignePalier(
     numero: Int,
     palier: ChampsPalier,
     erreur: Boolean,
+    erreurRir: Boolean,
     focusPoids: FocusRequester,
     focusRepetitions: FocusRequester,
     focusRir: FocusRequester,
@@ -310,6 +317,7 @@ private fun LignePalier(
             largeur = 48.dp,
             description = "RIR du palier $numero",
             modifier = Modifier.focusRequester(focusRir),
+            erreur = erreurRir,
             imeAction = if (dernier) ImeAction.Done else ImeAction.Next,
             onSuivant = KeyboardActionHandler { versSuivant() },
             indication = "RIR",
@@ -349,3 +357,6 @@ private fun LigneAjoutPalier(onClick: () -> Unit) {
         Text("Ajouter un palier", style = Typo.Action, color = Couleurs.Accent300)
     }
 }
+
+/** RIR tapé illisible (feuilles 7·D et tour) : ni un nombre, ni deux valeurs qui se suivent. */
+internal const val MessageRirIllisible = "RIR : un nombre, ou deux qui se suivent (2-3)"

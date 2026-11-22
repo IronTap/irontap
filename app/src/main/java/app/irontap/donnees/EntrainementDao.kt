@@ -6,7 +6,6 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import app.irontap.logique.EntrainementImporte
-import app.irontap.logique.RIR_MAX
 import app.irontap.logique.ecarterDoublons
 import app.irontap.logique.normaliserNom
 import app.irontap.logique.versImport
@@ -156,7 +155,7 @@ abstract class EntrainementDao {
         suite: Suite,
         maintenant: Instant,
         realtime: Long,
-        rir: Int? = null,
+        rir: Rir? = null,
     ): SerieAvecPaliers? {
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
         val paliers = paliersGardes(entrainementId, role = null) + listOfNotNull(repetitions?.let { ValeursPalier(poidsKg, it, rir) })
@@ -184,7 +183,7 @@ abstract class EntrainementDao {
         poidsKg: Double?,
         repetitions: Int,
         role: RoleSuperset? = null,
-        rir: Int? = null,
+        rir: Rir? = null,
     ): PalierEnCours? {
         verifier(ValeursPalier(poidsKg, repetitions, rir))
         val entrainement = lire(entrainementId)?.takeIf { it.termineLe == null } ?: return null
@@ -204,7 +203,8 @@ abstract class EntrainementDao {
             poidsKg = poidsKg,
             repetitions = repetitions,
             role = role,
-            rir = rir,
+            rirBas = rir?.bas,
+            rirHaut = rir?.hautEnBase,
         )
         return palier.copy(id = inserer(palier))
     }
@@ -239,7 +239,7 @@ abstract class EntrainementDao {
         repetitions: Int?,
         maintenant: Instant,
         realtime: Long,
-        rir: Int? = null,
+        rir: Rir? = null,
     ) {
         enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, Suite.NouvelleSerie, maintenant, realtime, rir)
         terminer(entrainementId, maintenant)
@@ -345,7 +345,7 @@ abstract class EntrainementDao {
         suite: Suite,
         maintenant: Instant,
         realtime: Long,
-        rir: Int? = null,
+        rir: Rir? = null,
     ): Annulable<SerieAvecPaliers>? {
         val avant = etatAvant(entrainementId) ?: return null
         val serie = enregistrerSerie(entrainementId, nomExercice, poidsKg, repetitions, suite, maintenant, realtime, rir) ?: return null
@@ -423,7 +423,7 @@ abstract class EntrainementDao {
     /** Mémorise noms, onglet actif, valeurs saisies et RIR choisis ; sans effet si ce superset s'est terminé entre-temps. */
     suspend fun memoriserSuperset(superset: SupersetEnCours) = with(superset) {
         memoriserSupersetBrut(
-            entrainementId, supersetId, nomA, nomB, actif, poidsA, repetitionsA, poidsB, repetitionsB, rirA, rirB,
+            entrainementId, supersetId, nomA, nomB, actif, poidsA, repetitionsA, poidsB, repetitionsB, rirABas, rirAHaut, rirBBas, rirBHaut,
         )
     }
 
@@ -537,14 +537,21 @@ abstract class EntrainementDao {
 
     private suspend fun insererPaliers(serieId: Long, paliers: List<ValeursPalier>): List<Palier> =
         paliers.mapIndexed { index, valeurs ->
-            val palier = Palier(serieId = serieId, ordre = index + 1, poidsKg = valeurs.poidsKg, repetitions = valeurs.repetitions, rir = valeurs.rir)
+            val palier = Palier(
+                serieId = serieId,
+                ordre = index + 1,
+                poidsKg = valeurs.poidsKg,
+                repetitions = valeurs.repetitions,
+                rirBas = valeurs.rir?.bas,
+                rirHaut = valeurs.rir?.hautEnBase,
+            )
             palier.copy(id = inserer(palier))
         }
 
     private fun verifier(palier: ValeursPalier) {
         require(palier.repetitions > 0) { "Répétitions : ${palier.repetitions}" }
         require(palier.poidsKg == null || palier.poidsKg >= 0) { "Poids : ${palier.poidsKg}" }
-        require(palier.rir == null || palier.rir in 0..RIR_MAX) { "RIR : ${palier.rir}" }
+        require(palier.rir?.valide != false) { "RIR : ${palier.rir}" }
     }
 
     /**
@@ -631,7 +638,7 @@ abstract class EntrainementDao {
 
     @Query(
         """
-        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions, p.rir,
+        SELECT t.id AS entrainement_id, t.date, t.libelle, x.nom, s.id AS serie_id, p.poids_kg, p.repetitions, p.rir, p.rir_haut,
         (SELECT y.nom FROM exercice y WHERE y.superset_id = x.superset_id AND y.id != x.id LIMIT 1) AS partenaire
         FROM palier p JOIN serie s ON s.id = p.serie_id JOIN exercice x ON x.id = s.exercice_id
         JOIN entrainement t ON t.id = x.entrainement_id
@@ -692,7 +699,8 @@ abstract class EntrainementDao {
     @Query(
         """
         UPDATE superset_en_cours SET nom_a = :nomA, nom_b = :nomB, actif = :actif, poids_a = :poidsA,
-        repetitions_a = :repetitionsA, poids_b = :poidsB, repetitions_b = :repetitionsB, rir_a = :rirA, rir_b = :rirB
+        repetitions_a = :repetitionsA, poids_b = :poidsB, repetitions_b = :repetitionsB, rir_a = :rirA,
+        rir_a_haut = :rirAHaut, rir_b = :rirB, rir_b_haut = :rirBHaut
         WHERE entrainement_id = :entrainementId AND superset_id = :supersetId
         """,
     )
@@ -707,13 +715,15 @@ abstract class EntrainementDao {
         poidsB: String,
         repetitionsB: String,
         rirA: Int?,
+        rirAHaut: Int?,
         rirB: Int?,
+        rirBHaut: Int?,
     )
 
     @Query(
         """
         UPDATE superset_en_cours SET actif = 'A', poids_a = '', repetitions_a = '', poids_b = '', repetitions_b = '',
-        rir_a = NULL, rir_b = NULL
+        rir_a = NULL, rir_a_haut = NULL, rir_b = NULL, rir_b_haut = NULL
         WHERE entrainement_id = :entrainementId
         """,
     )

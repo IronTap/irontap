@@ -31,7 +31,10 @@ import app.irontap.logique.lirePaliers
 import app.irontap.logique.lirePoids
 import app.irontap.logique.lireRepetitions
 import app.irontap.logique.lireRir
+import app.irontap.logique.rirApresAppui
+import app.irontap.logique.rirLisible
 import app.irontap.logique.suggerer
+import app.irontap.logique.texteRir
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -85,7 +88,7 @@ data class SuppressionTour(val a: Exercice, val b: Exercice, val tour: TourSuper
 
 /**
  * Champs d'un palier de la feuille d'édition. [cle] identifie la ligne (focus, erreurs) quand d'autres sont retirées.
- * [rir] : entier tel que saisi (« 5 » pour « 5+ »), vide s'il n'est pas noté.
+ * [rir] : tel que saisi (« 2 », « 2-3 », « 5 » pour « 5+ », cf. [texteRir]), vide s'il n'est pas noté.
  */
 class ChampsPalier(val cle: Long, poids: String = "", repetitions: String = "", rir: String = "") {
     val poids = TextFieldState(poids)
@@ -121,6 +124,8 @@ data class Panneaux(
      * L'erreur disparaît dès que ce texte change.
      */
     val paliersEnErreur: Map<Long, String> = emptyMap(),
+    /** Paliers dont le RIR tapé ne se lit pas (« 1-3 ») : clé de la ligne → texte du RIR, de même. */
+    val rirsEnErreur: Map<Long, String> = emptyMap(),
     val suppression: SuppressionSerie? = null,
     /**
      * Série dont la suppression est confirmée : sa ligne reste ouverte jusqu'à ce qu'elle disparaisse de
@@ -186,9 +191,15 @@ class DetailViewModel(
         // Une erreur disparaît dès que le champ fautif est modifié.
         viewModelScope.launch { texteNom.collect { _panneaux.update { it.copy(erreurNom = false) } } }
         viewModelScope.launch {
-            snapshotFlow { (paliers + champsTour.values).associate { it.cle to it.repetitions.text.toString() } }.collect { textes ->
+            snapshotFlow {
+                val champs = paliers + champsTour.values
+                champs.associate { it.cle to it.repetitions.text.toString() } to champs.associate { it.cle to it.rir.text.toString() }
+            }.collect { (repetitions, rirs) ->
                 _panneaux.update { panneaux ->
-                    panneaux.copy(paliersEnErreur = panneaux.paliersEnErreur.filter { (cle, texte) -> textes[cle] == texte })
+                    panneaux.copy(
+                        paliersEnErreur = panneaux.paliersEnErreur.filter { (cle, texte) -> repetitions[cle] == texte },
+                        rirsEnErreur = panneaux.rirsEnErreur.filter { (cle, texte) -> rirs[cle] == texte },
+                    )
                 }
             }
         }
@@ -220,14 +231,15 @@ class DetailViewModel(
      */
     fun ouvrirEdition(exercice: Exercice, serie: SerieAvecPaliers?, tour: Int? = null) {
         paliers.clear()
-        serie?.paliers?.forEach { paliers += champs(it.poidsKg?.let(::formaterPoids).orEmpty(), it.repetitions.toString(), it.rir?.toString().orEmpty()) }
+        serie?.paliers?.forEach { paliers += champs(it.poidsKg?.let(::formaterPoids).orEmpty(), it.repetitions.toString(), it.rir?.let(::texteRir).orEmpty()) }
         if (paliers.isEmpty()) paliers += champs()
         _panneaux.update { Panneaux(edition = EditionSerie(exercice, serie, tableau = paliers.size > 1, tour = tour)) }
     }
 
-    /** Pastilles du RIR de l'écran 7 (série simple : palier principal) ; `null` l'efface. */
-    fun choisirRir(rir: Int?) {
-        paliers.firstOrNull()?.rir?.setTextAndPlaceCursorAtEnd(rir?.toString().orEmpty())
+    /** Pastille [valeur] du RIR de l'écran 7 (série simple : palier principal) : choix, plage ou effacement ([rirApresAppui]). */
+    fun appuyerRir(valeur: Int) {
+        val champ = paliers.firstOrNull()?.rir ?: return
+        champ.setTextAndPlaceCursorAtEnd(rirApresAppui(lireRir(champ.text.toString()), valeur)?.let(::texteRir).orEmpty())
     }
 
     /** Boutons +X de l'écran 7 (série simple : palier principal). */
@@ -260,7 +272,10 @@ class DetailViewModel(
         val lignes = paliers.toList()
         when (val lecture = lirePaliers(lignes.map { it.textes })) {
             is LecturePaliers.Erreurs -> _panneaux.update { panneaux ->
-                panneaux.copy(paliersEnErreur = lecture.lignes.associate { lignes[it].cle to lignes[it].repetitions.text.toString() })
+                panneaux.copy(
+                    paliersEnErreur = lecture.lignes.associate { lignes[it].cle to lignes[it].repetitions.text.toString() },
+                    rirsEnErreur = lecture.rirs.associate { lignes[it].cle to lignes[it].rir.text.toString() },
+                )
             }
             is LecturePaliers.Valide -> ecrire(apres = ::fermerEdition) {
                 if (edition.serie == null) {
@@ -272,7 +287,7 @@ class DetailViewModel(
         }
     }
 
-    fun fermerEdition() = _panneaux.update { it.copy(edition = null, paliersEnErreur = emptyMap(), erreurEnregistrement = false) }
+    fun fermerEdition() = _panneaux.update { it.copy(edition = null, paliersEnErreur = emptyMap(), rirsEnErreur = emptyMap(), erreurEnregistrement = false) }
 
     // --- Tours d'un superset (maquettes H, 3·S+ T1) ---
 
@@ -298,7 +313,7 @@ class DetailViewModel(
             champsTour.getValue(role).remplir(
                 principal?.poidsKg?.let(::formaterPoids).orEmpty(),
                 principal?.repetitions?.toString().orEmpty(),
-                principal?.rir?.toString().orEmpty(),
+                principal?.rir?.let(::texteRir).orEmpty(),
             )
         }
         _panneaux.update { Panneaux(tour = EditionTour(bloc.a.exercice, bloc.b.exercice, tour.numero, existant = true, series = series)) }
@@ -309,15 +324,22 @@ class DetailViewModel(
 
     /**
      * « Enregistrer le tour » : un bloc vide est ignoré (la série de ce tour, s'il en a une, ne change pas, même si un RIR
-     * y a été tapé) ; un bloc rempli demande des répétitions. Le palier principal saisi, RIR compris, remplace celui de la
-     * série ; ses paliers dégressifs sont gardés.
+     * y a été tapé) ; un bloc rempli demande des répétitions, et un RIR lisible s'il est tapé. Le palier principal saisi, RIR
+     * compris, remplace celui de la série ; ses paliers dégressifs sont gardés.
      */
     fun enregistrerTour() {
         val edition = _panneaux.value.tour ?: return
         if (occupe || !tourEnregistrable()) return
-        val fautifs = champsTour.values.filter { !it.vide && lireRepetitions(it.repetitions.text.toString()) == null }
-        if (fautifs.isNotEmpty()) {
-            _panneaux.update { panneaux -> panneaux.copy(paliersEnErreur = fautifs.associate { it.cle to it.repetitions.text.toString() }) }
+        val remplis = champsTour.values.filter { !it.vide }
+        val fautifs = remplis.filter { lireRepetitions(it.repetitions.text.toString()) == null }
+        val rirsFautifs = remplis.filter { !rirLisible(it.rir.text.toString()) }
+        if (fautifs.isNotEmpty() || rirsFautifs.isNotEmpty()) {
+            _panneaux.update { panneaux ->
+                panneaux.copy(
+                    paliersEnErreur = fautifs.associate { it.cle to it.repetitions.text.toString() },
+                    rirsEnErreur = rirsFautifs.associate { it.cle to it.rir.text.toString() },
+                )
+            }
             return
         }
         val paliers = RoleSuperset.entries.associateWith { role ->
@@ -343,7 +365,7 @@ class DetailViewModel(
         }
     }
 
-    fun fermerTour() = _panneaux.update { it.copy(tour = null, paliersEnErreur = emptyMap(), erreurEnregistrement = false) }
+    fun fermerTour() = _panneaux.update { it.copy(tour = null, paliersEnErreur = emptyMap(), rirsEnErreur = emptyMap(), erreurEnregistrement = false) }
 
     /** Balayage d'un tour, ou « Supprimer le tour » de sa feuille : choix A, B ou les deux, après confirmation. */
     fun demanderSuppressionTour(bloc: BlocDetail.Superset, tour: TourSuperset) =

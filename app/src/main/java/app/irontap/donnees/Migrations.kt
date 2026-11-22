@@ -147,3 +147,17 @@ internal object Migration4Vers5 : Migration(4, 5) {
         db.execSQL("ALTER TABLE `superset_en_cours_v5` RENAME TO `superset_en_cours`")
     }
 }
+
+/**
+ * v5 → v6 (plage de RIR, DECISIONS.md) : borne haute d'une plage de deux valeurs voisines (« 2-3 »), `palier.rir_haut`,
+ * `palier_en_cours.rir_haut` et `rir_a_haut` / `rir_b_haut` du superset en cours de saisie. Vide pour l'existant : un RIR
+ * déjà noté reste une valeur seule.
+ */
+internal object Migration5Vers6 : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `palier` ADD COLUMN `rir_haut` INTEGER")
+        db.execSQL("ALTER TABLE `palier_en_cours` ADD COLUMN `rir_haut` INTEGER")
+        db.execSQL("ALTER TABLE `superset_en_cours` ADD COLUMN `rir_a_haut` INTEGER")
+        db.execSQL("ALTER TABLE `superset_en_cours` ADD COLUMN `rir_b_haut` INTEGER")
+    }
+}

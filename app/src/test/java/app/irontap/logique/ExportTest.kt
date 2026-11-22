@@ -5,6 +5,7 @@ import app.irontap.donnees.EntrainementComplet
 import app.irontap.donnees.Exercice
 import app.irontap.donnees.ExerciceAvecSeries
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.donnees.serieDeTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -216,23 +217,23 @@ class ExportTest {
     fun `RIR apres chaque palier qui en a un en texte, sur sa ligne en csv`() {
         val tirage = ExerciceAvecSeries(
             Exercice(1, 1, "Tirage vertical", 1),
-            listOf(serieDeTest(1, 1, 1, 45.0, 10, t0), serieDeTest(2, 1, 2, 45.0, 10, t0, 30.0 to 8, 20.0 to 6, rirs = listOf(2, null, 0))),
+            listOf(serieDeTest(1, 1, 1, 45.0, 10, t0), serieDeTest(2, 1, 2, 45.0, 10, t0, 30.0 to 8, 20.0 to 6, rirs = listOf(Rir(2, 3), null, Rir(0)))),
         )
-        val elevations = ExerciceAvecSeries(Exercice(2, 1, "Élévations", 2, "s1", RoleSuperset.A), listOf(serieDeTest(3, 2, 1, 8.0, 15, t0, rirs = listOf(5))))
+        val elevations = ExerciceAvecSeries(Exercice(2, 1, "Élévations", 2, "s1", RoleSuperset.A), listOf(serieDeTest(3, 2, 1, 8.0, 15, t0, rirs = listOf(Rir(4, 5)))))
         val curl = ExerciceAvecSeries(Exercice(3, 1, "Curl", 3, "s1", RoleSuperset.B), listOf(serieDeTest(4, 3, 1, 12.0, 12, t0)))
         val seance = entrainement(LocalDate.of(2026, 10, 12), null, tirage, elevations, curl)
         assertEquals(
-            "Lun. 12 oct. 2026\n\nTirage vertical\n  45 kg × 10\n  45 kg × 10 (RIR 2) ↓ 30 kg × 8 ↓ 20 kg × 6 (RIR 0)\n\n" +
-                "Superset : Élévations + Curl\n  A 8 kg × 15 (RIR 5+) · B 12 kg × 12\n",
+            "Lun. 12 oct. 2026\n\nTirage vertical\n  45 kg × 10\n  45 kg × 10 (RIR 2-3) ↓ 30 kg × 8 ↓ 20 kg × 6 (RIR 0)\n\n" +
+                "Superset : Élévations + Curl\n  A 8 kg × 15 (RIR 4-5+) · B 12 kg × 12\n",
             exporterTexte(listOf(seance)),
         )
         assertEquals(
             "date;libelle_entrainement;exercice;ordre_exercice;ordre_serie;palier;poids_kg;repetitions;entrainement;superset;role_superset;rir\r\n" +
                 "2026-10-12;;Tirage vertical;1;1;1;45;10;1;;;\r\n" +
-                "2026-10-12;;Tirage vertical;1;2;1;45;10;1;;;2\r\n" +
+                "2026-10-12;;Tirage vertical;1;2;1;45;10;1;;;2 à 3\r\n" +
                 "2026-10-12;;Tirage vertical;1;2;2;30;8;1;;;\r\n" +
                 "2026-10-12;;Tirage vertical;1;2;3;20;6;1;;;0\r\n" +
-                "2026-10-12;;Élévations;2;1;1;8;15;1;1;A;5\r\n" +
+                "2026-10-12;;Élévations;2;1;1;8;15;1;1;A;4 à 5\r\n" +
                 "2026-10-12;;Curl;3;1;1;12;12;1;1;B;\r\n",
             exporterCsv(listOf(seance)),
         )

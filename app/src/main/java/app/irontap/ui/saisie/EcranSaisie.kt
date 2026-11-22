@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import app.irontap.donnees.RoleSuperset
+import app.irontap.donnees.Rir
 import app.irontap.ui.composants.BadgeLettre
 import app.irontap.ui.composants.EtiquetteSuperset
 import androidx.compose.foundation.clickable
@@ -129,8 +130,8 @@ interface ActionsSaisie {
     fun ajouterAuPoids(valeur: Int)
     fun ajouterAuxRepetitions(valeur: Int)
 
-    /** Pastilles du RIR du palier en cours : la valeur choisie, ou `null` pour l'effacer. */
-    fun choisirRir(rir: Int?)
+    /** Appui sur la pastille [valeur] du RIR du palier en cours (choix, plage de deux voisines, effacement). */
+    fun appuyerRir(valeur: Int)
     fun enregistrer(suite: Suite)
     fun degressive()
     fun demanderFin()
@@ -211,7 +212,7 @@ fun ContenuSaisie(
     /** Superset en cours : onglets A / B à la place du champ du nom (S3) ; [nom], [poids], [repetitions], [rir] sont ceux de l'onglet actif. */
     onglets: OngletsSuperset? = null,
     /** RIR choisi pour le palier en cours, `null` s'il ne l'est pas. */
-    rir: Int? = null,
+    rir: Rir? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val superset = etat.etatSuperset?.takeIf { onglets != null }
@@ -303,7 +304,7 @@ fun ContenuSaisie(
                         }
                         Spacer(Modifier.height(12.dp))
                         LibelleChamp(LIBELLE_RIR)
-                        PastillesRir(rir, actions::choisirRir, precision = if (superset != null) "exercice $actif" else null)
+                        PastillesRir(rir, actions::appuyerRir, precision = if (superset != null) "exercice $actif" else null)
                     }
                     Spacer(Modifier.height(16.dp))
                     Spacer(Modifier.weight(1f))

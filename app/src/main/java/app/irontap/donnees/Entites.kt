@@ -7,6 +7,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
+import app.irontap.logique.RIR_MAX
 import java.time.Instant
 import java.time.LocalDate
 
@@ -88,8 +89,8 @@ data class Serie(
 /**
  * Un couple poids × répétitions d'une série. [ordre] commence à 1 (palier principal) ; les suivants sont
  * les paliers dégressifs, enchaînés sans repos. [poidsKg] vide = poids du corps ; les multiples de 0,25
- * sont exacts en `Double`. [rir] : répétitions en réserve, de 0 à 5 (5 se lit « 5+ »), vide quand il n'est pas noté
- * (DECISIONS.md).
+ * sont exacts en `Double`. [rir] : répétitions en réserve, vide quand il n'est pas noté (DECISIONS.md), enregistrées en
+ * [rirBas] et [rirHaut] (cf. [Rir.lu]).
  */
 @Entity(
     tableName = "palier",
@@ -109,8 +110,11 @@ data class Palier(
     val ordre: Int,
     @ColumnInfo(name = "poids_kg") val poidsKg: Double?,
     val repetitions: Int,
-    val rir: Int? = null,
+    @ColumnInfo(name = "rir") val rirBas: Int? = null,
+    @ColumnInfo(name = "rir_haut") val rirHaut: Int? = null,
 ) {
+    val rir get() = Rir.lu(rirBas, rirHaut)
+
     val valeurs get() = ValeursPalier(poidsKg, repetitions, rir)
 }
 
@@ -139,8 +143,11 @@ data class PalierEnCours(
     val repetitions: Int,
     /** Onglet du superset en cours qui garde ce palier ; vide hors superset. */
     val role: RoleSuperset? = null,
-    val rir: Int? = null,
+    @ColumnInfo(name = "rir") val rirBas: Int? = null,
+    @ColumnInfo(name = "rir_haut") val rirHaut: Int? = null,
 ) {
+    val rir get() = Rir.lu(rirBas, rirHaut)
+
     val valeurs get() = ValeursPalier(poidsKg, repetitions, rir)
 }
 
@@ -170,17 +177,42 @@ data class SupersetEnCours(
     @ColumnInfo(name = "repetitions_a") val repetitionsA: String = "",
     @ColumnInfo(name = "poids_b") val poidsB: String = "",
     @ColumnInfo(name = "repetitions_b") val repetitionsB: String = "",
-    @ColumnInfo(name = "rir_a") val rirA: Int? = null,
-    @ColumnInfo(name = "rir_b") val rirB: Int? = null,
+    @ColumnInfo(name = "rir_a") val rirABas: Int? = null,
+    @ColumnInfo(name = "rir_b") val rirBBas: Int? = null,
+    @ColumnInfo(name = "rir_a_haut") val rirAHaut: Int? = null,
+    @ColumnInfo(name = "rir_b_haut") val rirBHaut: Int? = null,
 ) {
     fun nom(role: RoleSuperset) = if (role == RoleSuperset.A) nomA else nomB
+
+    val rirA get() = Rir.lu(rirABas, rirAHaut)
+
+    val rirB get() = Rir.lu(rirBBas, rirBHaut)
 }
 
 /**
  * Poids, répétitions et RIR d'un palier, hors base (saisie, édition, affichage). [poidsKg] vide = poids du corps ;
  * [rir] vide = pas noté.
  */
-data class ValeursPalier(val poidsKg: Double?, val repetitions: Int, val rir: Int? = null)
+data class ValeursPalier(val poidsKg: Double?, val repetitions: Int, val rir: Rir? = null)
+
+/**
+ * RIR d'un palier (DECISIONS.md) : une valeur ([bas] = [haut]) ou une plage de deux valeurs voisines ([haut] = [bas] + 1,
+ * « 2-3 » : peut-être une répétition de plus), de 0 à [RIR_MAX] (« 5+ »).
+ */
+data class Rir(val bas: Int, val haut: Int = bas) {
+    val plage get() = haut != bas
+
+    /** Valeur seule ou plage de deux valeurs voisines, de 0 à [RIR_MAX]. */
+    val valide get() = bas >= 0 && haut <= RIR_MAX && (haut == bas || haut == bas + 1)
+
+    /** Borne haute telle qu'enregistrée en base : vide pour une valeur seule. */
+    val hautEnBase get() = haut.takeIf { plage }
+
+    companion object {
+        /** RIR enregistré en base : [bas] vide, pas noté ; [haut] vide, valeur seule. */
+        fun lu(bas: Int?, haut: Int?): Rir? = bas?.let { Rir(it, haut ?: it) }
+    }
+}
 
 /**
  * Chrono de repos de l'entraînement en cours (spec §4.3.4 et §6), supprimé à la fin de l'entraînement.
@@ -275,8 +307,11 @@ data class SerieHistorique(
     val repetitions: Int,
     /** Autre exercice du superset dont l'exercice faisait partie ce jour-là, `null` hors superset. */
     val partenaire: String? = null,
-    val rir: Int? = null,
-)
+    @ColumnInfo(name = "rir") val rirBas: Int? = null,
+    @ColumnInfo(name = "rir_haut") val rirHaut: Int? = null,
+) {
+    val rir get() = Rir.lu(rirBas, rirHaut)
+}
 
 /** Room ne garantit pas l'ordre des relations : on trie après lecture. */
 internal fun SerieAvecPaliers.trie() = copy(paliers = paliers.sortedBy { it.ordre })
@@ -294,7 +329,7 @@ internal fun EntrainementEnCours.trie() = copy(exercices = exercices.trie(), pal
  * palier courant [poidsKg] × [repetitions], avec son [rir] ; [repetitions] `null` : seulement les paliers gardés par
  * « Dégressive ».
  */
-data class SaisieOnglet(val nom: String, val poidsKg: Double?, val repetitions: Int?, val rir: Int? = null)
+data class SaisieOnglet(val nom: String, val poidsKg: Double?, val repetitions: Int?, val rir: Rir? = null)
 
 /** Tour de superset enregistré : son numéro et la série de chaque onglet enregistré. */
 data class TourEnregistre(val tour: Int, val series: Map<RoleSuperset, SerieAvecPaliers>)
