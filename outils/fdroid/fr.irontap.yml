@@ -21,9 +21,9 @@ Repo: https://github.com/IronTap/irontap.git
 Binaries: https://github.com/IronTap/irontap/releases/download/v%v/irontap-%v.apk
 
 Builds:
-  - versionName: 0.4.0
-    versionCode: 4
-    # Empreinte complète (40 caractères) du commit du tag v0.4.0 : git rev-parse v0.4.0^{commit}
+  - versionName: 0.5.0
+    versionCode: 5
+    # Empreinte complète (40 caractères) du commit du tag v0.5.0 : git rev-parse v0.5.0^{commit}
     commit: À COMPLÉTER
     subdir: app
     gradle:
@@ -34,5 +34,5 @@ AllowedAPKSigningKeys: d0d139abc42eb051da809cfadf5c6a7490715df6bffcaa693969b54d3
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
-CurrentVersion: 0.4.0
-CurrentVersionCode: 4
+CurrentVersion: 0.5.0
+CurrentVersionCode: 5
